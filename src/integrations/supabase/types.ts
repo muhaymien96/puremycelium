@@ -378,6 +378,7 @@ export type Database = {
       payments: {
         Row: {
           amount: number
+          checkout_id: string | null
           created_at: string | null
           created_by: string | null
           id: string
@@ -390,6 +391,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          checkout_id?: string | null
           created_at?: string | null
           created_by?: string | null
           id?: string
@@ -402,6 +404,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          checkout_id?: string | null
           created_at?: string | null
           created_by?: string | null
           id?: string

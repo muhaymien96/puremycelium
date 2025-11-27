@@ -116,12 +116,12 @@ serve(async (req) => {
         .update({ status: 'confirmed' })
         .eq('id', order_id);
 
-      // Update payment status
+      // Update payment status (preserve checkout_id, add provider_payment_id)
       await supabase
         .from('payments')
         .update({ 
           payment_status: 'completed',
-          provider_payment_id: event.payload.id
+          provider_payment_id: event.payload.id // Store actual payment ID from webhook
         })
         .eq('order_id', order_id)
         .eq('payment_status', 'pending');

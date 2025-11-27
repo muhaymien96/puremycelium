@@ -33,6 +33,8 @@ export function RefundModal({ order, isOpen, onClose }: RefundModalProps) {
   const maxRefundAmount = Number(order.total_amount) - totalRefunded;
   const payment = order.payments?.find((p: any) => p.payment_status === 'completed');
   const isCashPayment = payment?.payment_method === 'CASH';
+  const isYocoPayment = payment && (payment.payment_method === 'YOKO_WEBPOS' || payment.payment_method === 'PAYMENT_LINK');
+  const hasCheckoutId = payment?.checkout_id;
 
   const handleSubmit = async () => {
     if (Number(amount) <= 0 || Number(amount) > maxRefundAmount) {
@@ -88,6 +90,24 @@ export function RefundModal({ order, isOpen, onClose }: RefundModalProps) {
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
                 This is a CASH payment. Please ensure you manually return the cash to the customer.
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {isYocoPayment && !hasCheckoutId && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                This payment cannot be refunded automatically (no checkout ID). Please process refund manually through Yoco dashboard.
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          {isYocoPayment && hasCheckoutId && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Yoco refunds are processed asynchronously. The refund will be completed within a few moments after submission.
               </AlertDescription>
             </Alert>
           )}

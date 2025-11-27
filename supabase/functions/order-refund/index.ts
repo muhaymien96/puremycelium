@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const YOCO_API_URL = 'https://payments.yoco.com/api/refunds';
+const YOCO_API_BASE_URL = 'https://payments.yoco.com/api/checkouts';
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -77,6 +77,11 @@ serve(async (req) => {
       payment = paymentData;
     }
 
+    // Check if checkout_id exists for Yoco refunds
+    if (payment && !payment.checkout_id && payment.payment_method !== 'CASH') {
+      console.warn('No checkout_id found for non-CASH payment - cannot process Yoco refund');
+    }
+
     // Create refund record
     const { data: refund, error: refundError } = await supabase
       .from('refunds')
@@ -101,29 +106,27 @@ serve(async (req) => {
     }
 
     // If payment was via Yoco, process refund via Yoco API
-    if (payment && payment.provider_payment_id && yocoSecretKey) {
+    if (payment && payment.checkout_id && yocoSecretKey) {
+      const YOCO_REFUND_URL = `${YOCO_API_BASE_URL}/${payment.checkout_id}/refund`;
+      
       const refundPayload = {
-        paymentId: payment.provider_payment_id,
-        amount: Math.round(amount * 100), // Convert to cents
-        metadata: {
-          refund_id: refund.id,
-          order_id,
-          reason: reason || 'Customer request'
-        }
+        amount: Math.round(amount * 100) // Convert to cents - Yoco expects this format
       };
 
-      console.log('Processing Yoco refund:', refundPayload);
+      console.log('Processing Yoco refund:', { url: YOCO_REFUND_URL, payload: refundPayload });
 
-      const yocoResponse = await fetch(YOCO_API_URL, {
+      const yocoResponse = await fetch(YOCO_REFUND_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${yocoSecretKey}`,
           'Content-Type': 'application/json',
+          'Idempotency-Key': refund.id // Use refund ID for idempotency
         },
         body: JSON.stringify(refundPayload)
       });
 
-      if (!yocoResponse.ok) {
+      // Yoco returns 202 Accepted for async refund processing
+      if (!yocoResponse.ok && yocoResponse.status !== 202) {
         const errorText = await yocoResponse.text();
         console.error('Yoco refund API error:', errorText);
         
@@ -146,16 +149,14 @@ serve(async (req) => {
         );
       }
 
-      const yocoData = await yocoResponse.json();
-      console.log('Yoco refund initiated:', yocoData);
+      console.log('Yoco refund initiated - awaiting webhook confirmation');
 
-      // Refund will be completed via webhook
+      // Refund will be completed via webhook (202 Accepted response)
       return new Response(
         JSON.stringify({ 
           success: true,
           refund,
-          yoco_refund: yocoData,
-          message: 'Refund initiated via Yoco. Awaiting webhook confirmation.'
+          message: 'Refund initiated via Yoco. Processing will complete shortly via webhook.'
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
