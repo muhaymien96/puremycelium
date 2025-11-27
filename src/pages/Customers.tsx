@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, Mail, Phone } from 'lucide-react';
+import { Plus, Mail, Phone, Users } from 'lucide-react';
 import { useCustomers } from '@/hooks/useCustomers';
 import { AddCustomerModal } from '@/components/AddCustomerModal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { EmptyState } from '@/components/EmptyState';
 
 const Customers = () => {
   const navigate = useNavigate();
@@ -65,15 +66,13 @@ const Customers = () => {
             </Card>
           ))
         ) : (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <p className="text-muted-foreground mb-4">No customers yet</p>
-              <Button onClick={() => setShowAddCustomer(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Your First Customer
-              </Button>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={Users}
+            title="No customers yet"
+            description="Start building your customer base by adding your first customer"
+            actionLabel="Add Customer"
+            onAction={() => setShowAddCustomer(true)}
+          />
         )}
 
         <AddCustomerModal open={showAddCustomer} onOpenChange={setShowAddCustomer} />

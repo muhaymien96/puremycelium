@@ -151,6 +151,43 @@ export const useProcessRefund = () => {
   });
 };
 
+export const useUpdateOrderStatus = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (data: {
+      order_id: string;
+      new_status: string;
+      notes?: string;
+    }) => {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: data.new_status as any })
+        .eq('id', data.order_id);
+
+      if (error) throw error;
+
+      // Add manual note if provided
+      if (data.notes) {
+        await supabase
+          .from('order_status_history')
+          .update({ notes: data.notes })
+          .eq('order_id', data.order_id)
+          .eq('new_status', data.new_status as any)
+          .order('created_at', { ascending: false })
+          .limit(1);
+      }
+
+      return { success: true };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order-detail'] });
+      toast.success('Order status updated');
+    },
+  });
+};
+
 export const useDashboardStats = () => {
   return useQuery({
     queryKey: ['dashboard-stats'],
