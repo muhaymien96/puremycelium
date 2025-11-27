@@ -5,13 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Search, Eye } from 'lucide-react';
+import { Search, Eye, ShoppingCart } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useOrders } from '@/hooks/useOrders';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OrderDetailModal } from '@/components/OrderDetailModal';
+import { EmptyState } from '@/components/EmptyState';
+import { useNavigate } from 'react-router-dom';
 
 const Orders = () => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -168,10 +171,15 @@ const Orders = () => {
                 </div>
               </>
             ) : (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground mb-2">No orders found</p>
-                <p className="text-sm text-muted-foreground">Try adjusting your filters</p>
-              </div>
+              <EmptyState
+                icon={ShoppingCart}
+                title="No orders found"
+                description={searchQuery || statusFilter !== 'all' 
+                  ? "Try adjusting your filters to see more results" 
+                  : "Start making sales to see your orders here"}
+                actionLabel={!searchQuery && statusFilter === 'all' ? "Create New Sale" : undefined}
+                onAction={!searchQuery && statusFilter === 'all' ? () => navigate('/sale') : undefined}
+              />
             )}
           </CardContent>
         </Card>

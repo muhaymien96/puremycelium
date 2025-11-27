@@ -34,7 +34,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { order_id, payment_method, amount, metadata } = body;
+    const { order_id, payment_method, amount, manual_terminal_confirmation, metadata } = body;
 
     if (!order_id || !payment_method || amount === undefined) {
       return new Response(
@@ -58,8 +58,8 @@ serve(async (req) => {
       );
     }
 
-    // CASH Payment Flow
-    if (payment_method === 'CASH') {
+    // CASH Payment Flow or Manual Terminal Confirmation
+    if (payment_method === 'CASH' || (payment_method === 'YOKO_WEBPOS' && manual_terminal_confirmation)) {
       // Update order status to confirmed
       const { error: updateError } = await supabase
         .from('orders')
@@ -80,10 +80,10 @@ serve(async (req) => {
         .insert({
           order_id,
           amount,
-          payment_method: 'CASH',
+          payment_method: payment_method,
           payment_status: 'completed',
           created_by: user.id,
-          notes: metadata?.notes || null
+          notes: manual_terminal_confirmation ? 'Manual terminal confirmation' : (metadata?.notes || null)
         })
         .select()
         .single();
