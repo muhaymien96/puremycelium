@@ -124,41 +124,127 @@ serve(async (req) => {
       console.error('Error creating payment record:', paymentError);
     }
 
-    // Send email with payment link
+    // Generate unpaid invoice first
+    const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
+    const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
+
+    const { data: invoice, error: invoiceError } = await supabase.from('invoices').insert({
+      invoice_number,
+      order_id,
+      customer_id: order.customer_id,
+      total_amount: order.total_amount,
+      tax_amount: order.tax_amount,
+      paid_amount: 0,
+      status: 'unpaid', // Keep unpaid until payment received
+      created_by: user.id
+    })
+    .select()
+    .single();
+
+    if (invoiceError) {
+      console.error('Error creating invoice:', invoiceError);
+    }
+
+    // Generate invoice PDF
+    let invoicePdfUrl = null;
+    if (invoice) {
+      try {
+        const pdfResponse = await supabase.functions.invoke('generate-invoice-pdf', {
+          body: { invoice_id: invoice.id }
+        });
+        if (pdfResponse.data?.pdf_url) {
+          invoicePdfUrl = pdfResponse.data.pdf_url;
+        }
+      } catch (pdfError) {
+        console.error('Error generating PDF:', pdfError);
+      }
+    }
+
+    // Send combined invoice + payment link email
     const customerName = order.customers?.first_name 
       ? `${order.customers.first_name} ${order.customers.last_name || ''}`
       : 'Valued Customer';
 
     try {
       const emailResponse = await resend.emails.send({
-        from: "PureMycelium <onboarding@resend.dev>",
+        from: "PureMycelium <invoices@resend.dev>",
         to: [customer_email],
-        subject: `Payment Link for Order ${order.order_number}`,
+        subject: `Invoice ${invoice_number} - PureMycelium`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">Complete Your Payment</h2>
-            <p>Hello ${customerName},</p>
-            <p>Thank you for your order! Please click the button below to complete your payment securely:</p>
-            <div style="text-align: center; margin: 30px 0;">
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #2c5f2d; margin: 0;">🍄 PureMycelium</h1>
+              <p style="color: #666; margin: 5px 0;">Premium Honey & Gourmet Mushrooms</p>
+            </div>
+
+            <h2 style="color: #333; border-bottom: 2px solid #2c5f2d; padding-bottom: 10px;">Invoice</h2>
+            
+            <p>Dear ${customerName},</p>
+            <p>Thank you for your order! Please find your invoice details below.</p>
+            
+            <div style="background: #f9f9f9; padding: 20px; border-radius: 8px; margin: 25px 0;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; color: #666;"><strong>Invoice Number:</strong></td>
+                  <td style="padding: 8px 0; text-align: right;">${invoice_number}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #666;"><strong>Order Number:</strong></td>
+                  <td style="padding: 8px 0; text-align: right;">${order.order_number}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #666;"><strong>Date:</strong></td>
+                  <td style="padding: 8px 0; text-align: right;">${new Date().toLocaleDateString()}</td>
+                </tr>
+                <tr style="border-top: 2px solid #ddd;">
+                  <td style="padding: 12px 0; color: #666; font-size: 18px;"><strong>Amount Due:</strong></td>
+                  <td style="padding: 12px 0; text-align: right; font-size: 24px; color: #2c5f2d; font-weight: bold;">R${(amount).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; color: #d32f2f;"><strong>Status:</strong></td>
+                  <td style="padding: 8px 0; text-align: right; color: #d32f2f; font-weight: bold;">UNPAID</td>
+                </tr>
+              </table>
+            </div>
+
+            ${invoicePdfUrl ? `
+            <div style="text-align: center; margin: 20px 0;">
+              <a href="${invoicePdfUrl}" 
+                 style="color: #2c5f2d; text-decoration: none; font-weight: bold;">
+                📄 Download Invoice PDF
+              </a>
+            </div>
+            ` : ''}
+
+            <div style="text-align: center; margin: 35px 0;">
+              <p style="font-size: 16px; margin-bottom: 15px;">Click below to complete your payment securely:</p>
               <a href="${yocoData.redirectUrl}" 
-                 style="background-color: #4CAF50; color: white; padding: 14px 28px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">
+                 style="background-color: #2c5f2d; color: white; padding: 16px 32px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 16px;">
                 Pay Now - R${(amount).toFixed(2)}
               </a>
             </div>
-            <p><strong>Order Details:</strong></p>
-            <ul>
-              <li>Order Number: ${order.order_number}</li>
-              <li>Total Amount: R${(amount).toFixed(2)}</li>
-            </ul>
-            <p>If you have any questions, please don't hesitate to contact us.</p>
-            <p style="color: #666; font-size: 12px; margin-top: 30px;">
-              This payment link is secure and provided by Yoco. If you didn't request this payment, please ignore this email.
+
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 25px 0;">
+              <p style="margin: 0; color: #856404;">
+                <strong>⏰ Payment Required:</strong> Please complete payment to confirm your order.
+              </p>
+            </div>
+
+            <p style="color: #666; font-size: 14px; margin-top: 30px;">
+              If you have any questions, please don't hesitate to contact us.
+            </p>
+
+            <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;" />
+            
+            <p style="color: #999; font-size: 12px; text-align: center;">
+              This payment link is secure and provided by Yoco.<br>
+              PureMycelium - Bringing nature's finest to your table.
             </p>
           </div>
         `,
       });
 
-      console.log('Payment link email sent:', emailResponse);
+      console.log('Combined invoice + payment link email sent:', emailResponse);
     } catch (emailError) {
       console.error('Error sending email:', emailError);
       // Don't fail the request if email fails - payment link is still created

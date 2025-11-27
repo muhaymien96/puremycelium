@@ -156,39 +156,61 @@ serve(async (req) => {
         });
       }
 
-      // Generate invoice
-      const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
-      const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
+      // Find existing invoice and update to paid
+      const { data: existingInvoice } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('order_id', order_id)
+        .single();
 
-      const { data: invoice, error: invoiceError } = await supabase.from('invoices').insert({
-        invoice_number,
-        order_id,
-        customer_id: order.customer_id,
-        total_amount: order.total_amount,
-        tax_amount: order.tax_amount,
-        paid_amount: event.payload.amount / 100, // Convert from cents
-        status: 'paid'
-      })
-      .select()
-      .single();
+      if (existingInvoice) {
+        // Update existing invoice to paid
+        await supabase.from('invoices').update({
+          paid_amount: event.payload.amount / 100,
+          status: 'paid'
+        }).eq('id', existingInvoice.id);
 
-      if (invoiceError) {
-        console.error('Error creating invoice:', invoiceError);
-      } else {
-        // Trigger PDF generation
+        // Regenerate PDF with "PAID" status
         try {
-          const pdfResponse = await supabase.functions.invoke('generate-invoice-pdf', {
-            body: { invoice_id: invoice.id }
+          await supabase.functions.invoke('generate-invoice-pdf', {
+            body: { invoice_id: existingInvoice.id }
           });
-          console.log('PDF generation triggered:', pdfResponse);
 
-          // Trigger invoice delivery
-          const sendResponse = await supabase.functions.invoke('send-invoice', {
-            body: { invoice_id: invoice.id }
+          // Send receipt/thank you email
+          await supabase.functions.invoke('send-invoice', {
+            body: { invoice_id: existingInvoice.id, send_receipt: true }
           });
-          console.log('Invoice delivery triggered:', sendResponse);
-        } catch (invoiceProcessError) {
-          console.error('Error processing invoice PDF/delivery:', invoiceProcessError);
+        } catch (error) {
+          console.error('Error updating invoice:', error);
+        }
+      } else {
+        // Fallback: create new invoice if none exists (shouldn't happen normally)
+        const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
+        const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
+
+        const { data: invoice, error: invoiceError } = await supabase.from('invoices').insert({
+          invoice_number,
+          order_id,
+          customer_id: order.customer_id,
+          total_amount: order.total_amount,
+          tax_amount: order.tax_amount,
+          paid_amount: event.payload.amount / 100,
+          status: 'paid'
+        })
+        .select()
+        .single();
+
+        if (!invoiceError && invoice) {
+          try {
+            await supabase.functions.invoke('generate-invoice-pdf', {
+              body: { invoice_id: invoice.id }
+            });
+            await supabase.functions.invoke('send-invoice', {
+              body: { invoice_id: invoice.id, send_receipt: true }
+            });
+          } catch (error) {
+            console.error('Error processing new invoice:', error);
+          }
         }
       }
 

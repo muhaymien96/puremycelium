@@ -123,7 +123,7 @@ serve(async (req) => {
         });
       }
 
-      // Generate invoice
+      // Generate invoice (paid for cash/terminal)
       const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
       const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
 
@@ -136,7 +136,7 @@ serve(async (req) => {
           total_amount: order.total_amount,
           tax_amount: order.tax_amount,
           paid_amount: amount,
-          status: 'paid',
+          status: 'paid', // Cash/terminal payments are immediately paid
           created_by: user.id
         })
         .select()
