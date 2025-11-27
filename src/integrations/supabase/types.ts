@@ -706,6 +706,8 @@ export type Database = {
         | "shipped"
         | "delivered"
         | "cancelled"
+        | "refunded"
+        | "partially_refunded"
       payment_status: "pending" | "completed" | "failed" | "refunded"
       product_category: "honey" | "mushroom" | "other"
       refund_status: "pending" | "approved" | "rejected" | "completed"
@@ -843,6 +845,8 @@ export const Constants = {
         "shipped",
         "delivered",
         "cancelled",
+        "refunded",
+        "partially_refunded",
       ],
       payment_status: ["pending", "completed", "failed", "refunded"],
       product_category: ["honey", "mushroom", "other"],

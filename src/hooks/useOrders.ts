@@ -119,6 +119,38 @@ export const useSendPaymentLink = () => {
   });
 };
 
+export const useProcessRefund = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (data: {
+      order_id: string;
+      payment_id?: string;
+      amount: number;
+      reason: string;
+      notes?: string;
+      items: Array<{
+        order_item_id: string;
+        product_id: string;
+        batch_id?: string;
+        quantity: number;
+      }>;
+    }) => {
+      const { data: result, error } = await supabase.functions.invoke('order-refund', {
+        body: data
+      });
+
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['order-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    },
+  });
+};
+
 export const useDashboardStats = () => {
   return useQuery({
     queryKey: ['dashboard-stats'],
