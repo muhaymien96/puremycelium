@@ -37,12 +37,16 @@ const Orders = () => {
         return 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20';
       case 'confirmed':
         return 'bg-green-500/10 text-green-600 border-green-500/20';
+      case 'shipped':
+        return 'bg-purple-500/10 text-purple-600 border-purple-500/20';
+      case 'delivered':
+        return 'bg-green-600/10 text-green-700 border-green-600/20';
       case 'completed':
         return 'bg-blue-500/10 text-blue-600 border-blue-500/20';
       case 'cancelled':
         return 'bg-red-500/10 text-red-600 border-red-500/20';
       case 'refunded':
-        return 'bg-purple-500/10 text-purple-600 border-purple-500/20';
+        return 'bg-gray-500/10 text-gray-600 border-gray-500/20';
       case 'partially_refunded':
         return 'bg-orange-500/10 text-orange-600 border-orange-500/20';
       default:
@@ -80,6 +84,8 @@ const Orders = () => {
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
+                  <SelectItem value="shipped">Shipped</SelectItem>
+                  <SelectItem value="delivered">Delivered</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                   <SelectItem value="refunded">Refunded</SelectItem>
