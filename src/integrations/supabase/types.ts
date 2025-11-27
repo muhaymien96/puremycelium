@@ -366,6 +366,33 @@ export type Database = {
           },
         ]
       }
+      processed_webhooks: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          payload: Json | null
+          processed_at: string
+          webhook_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          payload?: Json | null
+          processed_at?: string
+          webhook_id: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          payload?: Json | null
+          processed_at?: string
+          webhook_id?: string
+        }
+        Relationships: []
+      }
       product_batches: {
         Row: {
           batch_number: string
@@ -619,7 +646,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      generate_invoice_number: { Args: never; Returns: string }
     }
     Enums: {
       order_status:
