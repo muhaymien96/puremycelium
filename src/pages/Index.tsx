@@ -1,4 +1,9 @@
+import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
+
 const Index = () => {
+  const navigate = useNavigate();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="max-w-3xl px-8 text-center">
@@ -22,6 +27,11 @@ const Index = () => {
             <li>✓ Refunds</li>
             <li>✓ Invoices</li>
           </ul>
+        </div>
+        <div className="mt-8">
+          <Button onClick={() => navigate('/invoices')} size="lg">
+            View Invoices
+          </Button>
         </div>
       </div>
     </div>

@@ -160,7 +160,7 @@ serve(async (req) => {
       const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
       const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
 
-      await supabase.from('invoices').insert({
+      const { data: invoice, error: invoiceError } = await supabase.from('invoices').insert({
         invoice_number,
         order_id,
         customer_id: order.customer_id,
@@ -168,7 +168,29 @@ serve(async (req) => {
         tax_amount: order.tax_amount,
         paid_amount: event.payload.amount / 100, // Convert from cents
         status: 'paid'
-      });
+      })
+      .select()
+      .single();
+
+      if (invoiceError) {
+        console.error('Error creating invoice:', invoiceError);
+      } else {
+        // Trigger PDF generation
+        try {
+          const pdfResponse = await supabase.functions.invoke('generate-invoice-pdf', {
+            body: { invoice_id: invoice.id }
+          });
+          console.log('PDF generation triggered:', pdfResponse);
+
+          // Trigger invoice delivery
+          const sendResponse = await supabase.functions.invoke('send-invoice', {
+            body: { invoice_id: invoice.id }
+          });
+          console.log('Invoice delivery triggered:', sendResponse);
+        } catch (invoiceProcessError) {
+          console.error('Error processing invoice PDF/delivery:', invoiceProcessError);
+        }
+      }
 
       console.log(`Payment succeeded for order ${order_id}`);
     }

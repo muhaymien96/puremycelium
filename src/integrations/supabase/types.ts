@@ -28,6 +28,7 @@ export type Database = {
           notes: string | null
           phone: string | null
           postal_code: string | null
+          preferred_channel: string | null
           updated_at: string | null
         }
         Insert: {
@@ -43,6 +44,7 @@ export type Database = {
           notes?: string | null
           phone?: string | null
           postal_code?: string | null
+          preferred_channel?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -58,6 +60,7 @@ export type Database = {
           notes?: string | null
           phone?: string | null
           postal_code?: string | null
+          preferred_channel?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -75,6 +78,9 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           customer_id: string | null
+          delivery_channel: string | null
+          delivery_error: string | null
+          delivery_status: string | null
           due_date: string | null
           id: string
           invoice_date: string
@@ -82,6 +88,8 @@ export type Database = {
           notes: string | null
           order_id: string | null
           paid_amount: number | null
+          pdf_url: string | null
+          sent_at: string | null
           status: string | null
           tax_amount: number | null
           total_amount: number
@@ -91,6 +99,9 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           customer_id?: string | null
+          delivery_channel?: string | null
+          delivery_error?: string | null
+          delivery_status?: string | null
           due_date?: string | null
           id?: string
           invoice_date?: string
@@ -98,6 +109,8 @@ export type Database = {
           notes?: string | null
           order_id?: string | null
           paid_amount?: number | null
+          pdf_url?: string | null
+          sent_at?: string | null
           status?: string | null
           tax_amount?: number | null
           total_amount: number
@@ -107,6 +120,9 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           customer_id?: string | null
+          delivery_channel?: string | null
+          delivery_error?: string | null
+          delivery_status?: string | null
           due_date?: string | null
           id?: string
           invoice_date?: string
@@ -114,6 +130,8 @@ export type Database = {
           notes?: string | null
           order_id?: string | null
           paid_amount?: number | null
+          pdf_url?: string | null
+          sent_at?: string | null
           status?: string | null
           tax_amount?: number | null
           total_amount?: number
