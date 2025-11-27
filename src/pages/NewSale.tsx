@@ -2,22 +2,26 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Plus, Minus, CreditCard, Banknote, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useProducts } from '@/hooks/useProducts';
+import { useCustomers } from '@/hooks/useCustomers';
+import { useCreateOrder, useProcessPayment } from '@/hooks/useOrders';
+import { AddCustomerModal } from '@/components/AddCustomerModal';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const NewSale = () => {
   const navigate = useNavigate();
   const [paymentMethod, setPaymentMethod] = useState<string>('');
+  const [customerId, setCustomerId] = useState<string>('');
   const [cartItems, setCartItems] = useState<any[]>([]);
-
-  const products = [
-    { id: '1', name: 'Wildflower Honey 500g', price: 120, stock: 15 },
-    { id: '2', name: 'Oyster Mushrooms 250g', price: 45, stock: 8 },
-    { id: '3', name: 'Shiitake Mushrooms 250g', price: 60, stock: 12 },
-  ];
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  
+  const { data: products, isLoading: loadingProducts } = useProducts();
+  const { data: customers, isLoading: loadingCustomers } = useCustomers();
+  const createOrder = useCreateOrder();
+  const processPayment = useProcessPayment();
 
   const addToCart = (product: any) => {
     const existing = cartItems.find(item => item.id === product.id);
@@ -42,7 +46,7 @@ const NewSale = () => {
 
   const total = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cartItems.length === 0) {
       toast.error('Please add items to cart');
       return;
@@ -51,9 +55,44 @@ const NewSale = () => {
       toast.error('Please select a payment method');
       return;
     }
-    
-    toast.success('Processing payment...');
-    // Payment processing logic would go here
+
+    try {
+      // Create order
+      const orderData = {
+        customer_id: customerId || null,
+        items: cartItems.map(item => ({
+          product_id: item.id,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+        })),
+        tax_amount: 0,
+        discount_amount: 0,
+      };
+
+      const { order } = await createOrder.mutateAsync(orderData);
+
+      // Process payment
+      const paymentData = {
+        order_id: order.id,
+        payment_method: paymentMethod,
+        amount: total,
+      };
+
+      const result = await processPayment.mutateAsync(paymentData);
+
+      if (paymentMethod === 'CASH') {
+        navigate(`/payment/success?orderId=${order.id}`);
+      } else {
+        // Redirect to payment processing page for Yoco payments
+        if (result.checkout_url) {
+          window.location.href = result.checkout_url;
+        } else {
+          navigate(`/payment/processing?orderId=${order.id}&method=${paymentMethod}`);
+        }
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+    }
   };
 
   return (
@@ -73,23 +112,70 @@ const NewSale = () => {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* Customer Selection */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Customer (Optional)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Select value={customerId} onValueChange={setCustomerId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select customer (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {loadingCustomers ? (
+                  <SelectItem value="loading" disabled>Loading...</SelectItem>
+                ) : (
+                  <>
+                    <SelectItem value="">No customer</SelectItem>
+                    {customers?.map((customer) => (
+                      <SelectItem key={customer.id} value={customer.id}>
+                        {customer.first_name} {customer.last_name}
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => setShowCustomerModal(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add New Customer
+            </Button>
+          </CardContent>
+        </Card>
+
         {/* Product Selection */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Select Products</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {products.map((product) => (
-              <div key={product.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent transition-colors">
-                <div className="flex-1">
-                  <p className="font-medium">{product.name}</p>
-                  <p className="text-sm text-muted-foreground">R {product.price} • Stock: {product.stock}</p>
-                </div>
-                <Button size="sm" onClick={() => addToCart(product)}>
-                  <Plus className="h-4 w-4" />
-                </Button>
+            {loadingProducts ? (
+              <div className="space-y-2">
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
               </div>
-            ))}
+            ) : products && products.length > 0 ? (
+              products.map((product) => (
+                <div key={product.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent transition-colors">
+                  <div className="flex-1">
+                    <p className="font-medium">{product.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      R {product.unit_price} • Stock: {product.total_stock}
+                    </p>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    onClick={() => addToCart({ ...product, price: product.unit_price, stock: product.total_stock })}
+                    disabled={product.total_stock === 0}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-muted-foreground py-4">No products available</p>
+            )}
           </CardContent>
         </Card>
 
@@ -162,6 +248,8 @@ const NewSale = () => {
             </button>
           </CardContent>
         </Card>
+
+        <AddCustomerModal open={showCustomerModal} onOpenChange={setShowCustomerModal} />
       </main>
     </div>
   );
