@@ -1,9 +1,10 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft, Mail, Phone, MapPin } from 'lucide-react';
+import { Mail, Phone, MapPin } from 'lucide-react';
 import { useCustomer, useCustomerOrders } from '@/hooks/useCustomers';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 const CustomerDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -13,48 +14,41 @@ const CustomerDetail = () => {
 
   if (loadingCustomer) {
     return (
-      <div className="min-h-screen bg-background">
-        <header className="border-b bg-card sticky top-0 z-10">
-          <div className="max-w-4xl mx-auto px-4 py-4">
-            <Skeleton className="h-8 w-48" />
-          </div>
-        </header>
-        <main className="max-w-4xl mx-auto px-4 py-6">
+      <AppLayout>
+        <div className="p-4 md:p-6">
+          <Skeleton className="h-8 w-48 mb-6" />
           <Skeleton className="h-48 w-full" />
-        </main>
-      </div>
+        </div>
+      </AppLayout>
     );
   }
 
   if (!customer) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-muted-foreground mb-4">Customer not found</p>
-          <Button onClick={() => navigate('/customers')}>Back to Customers</Button>
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center">
+            <p className="text-muted-foreground mb-4">Customer not found</p>
+            <Button onClick={() => navigate('/customers')}>Back to Customers</Button>
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   const totalSpent = orders?.reduce((sum, order) => sum + Number(order.total_amount), 0) || 0;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate('/customers')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-xl font-bold">Customer Details</h1>
+    <AppLayout>
+      <div className="p-4 md:p-6 space-y-6 pb-20 md:pb-6">
+        <div>
+          <h1 className="text-2xl font-bold">{customer.first_name} {customer.last_name}</h1>
+          <p className="text-sm text-muted-foreground">Customer information and order history</p>
         </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Customer Info Card */}
         <Card>
           <CardHeader>
-            <CardTitle>{customer.first_name} {customer.last_name}</CardTitle>
+            <CardTitle className="text-lg">Contact Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {customer.email && (
@@ -142,8 +136,8 @@ const CustomerDetail = () => {
             )}
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 };
 

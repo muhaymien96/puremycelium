@@ -3,13 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Plus, Minus, CreditCard, Banknote, Link2 } from 'lucide-react';
+import { Plus, Minus, CreditCard, Banknote, Link2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProducts } from '@/hooks/useProducts';
 import { useCustomers } from '@/hooks/useCustomers';
 import { useCreateOrder, useProcessPayment } from '@/hooks/useOrders';
 import { AddCustomerModal } from '@/components/AddCustomerModal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 const NewSale = () => {
   const navigate = useNavigate();
@@ -96,22 +97,17 @@ const NewSale = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-xl font-bold">New Sale</h1>
+    <AppLayout>
+      <div className="p-4 md:p-6 space-y-6 pb-20 md:pb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">New Sale</h1>
+            <p className="text-sm text-muted-foreground">Create a new order and process payment</p>
           </div>
           <Button onClick={handleCheckout} disabled={cartItems.length === 0}>
             Complete Sale
           </Button>
         </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Customer Selection */}
         <Card>
           <CardHeader>
@@ -250,8 +246,8 @@ const NewSale = () => {
         </Card>
 
         <AddCustomerModal open={showCustomerModal} onOpenChange={setShowCustomerModal} />
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 };
 

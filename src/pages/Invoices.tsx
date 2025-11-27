@@ -1,16 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Download, RefreshCw, Eye, ArrowLeft } from "lucide-react";
+import { Download, RefreshCw, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AppLayout } from "@/components/layout/AppLayout";
 
 const Invoices = () => {
-  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<string>("all");
 
@@ -78,25 +77,21 @@ const Invoices = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-xl font-bold">Invoices</h1>
+    <AppLayout>
+      <div className="p-4 md:p-6 space-y-6 pb-20 md:pb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Invoices</h1>
+            <p className="text-sm text-muted-foreground">View and manage all invoices</p>
           </div>
           <Button onClick={() => refetch()} variant="outline" size="sm">
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
         </div>
-      </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
         {/* Filters */}
-        <div className="flex gap-4 mb-6">
+        <div className="flex gap-4">
           <div className="w-48">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger>
@@ -128,7 +123,7 @@ const Invoices = () => {
         </div>
 
         {/* Table */}
-        <div className="rounded-lg border bg-card">
+        <div className="rounded-lg border bg-card overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -202,8 +197,8 @@ const Invoices = () => {
             </TableBody>
           </Table>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 };
 

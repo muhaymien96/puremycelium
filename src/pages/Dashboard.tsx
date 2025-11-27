@@ -1,46 +1,30 @@
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { LogOut, Plus, Package, Users, Receipt, TrendingUp } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
 import { useDashboardStats, useOrders } from '@/hooks/useOrders';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 const Dashboard = () => {
-  const navigate = useNavigate();
-  const { user, signOut } = useAuth();
   const { data: stats, isLoading: loadingStats } = useDashboardStats();
   const { data: recentOrders, isLoading: loadingOrders } = useOrders();
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/auth');
-  };
-
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold">🍯 PureMycelium</h1>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{user?.email}</span>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+    <AppLayout>
+      <div className="p-4 md:p-6 space-y-6 pb-20 md:pb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Welcome back! Here's an overview of your business.
+          </p>
         </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Total Sales</p>
               {loadingStats ? (
-                <Skeleton className="h-10 w-32" />
+                <Skeleton className="h-10 w-32 mt-2" />
               ) : (
-                <p className="text-3xl font-bold">R {stats?.totalSales.toFixed(2) || '0.00'}</p>
+                <p className="text-3xl font-bold mt-2">R {stats?.totalSales.toFixed(2) || '0.00'}</p>
               )}
             </CardContent>
           </Card>
@@ -48,9 +32,9 @@ const Dashboard = () => {
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Orders</p>
               {loadingStats ? (
-                <Skeleton className="h-10 w-16" />
+                <Skeleton className="h-10 w-16 mt-2" />
               ) : (
-                <p className="text-3xl font-bold">{stats?.orderCount || 0}</p>
+                <p className="text-3xl font-bold mt-2">{stats?.orderCount || 0}</p>
               )}
             </CardContent>
           </Card>
@@ -58,9 +42,9 @@ const Dashboard = () => {
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Customers</p>
               {loadingStats ? (
-                <Skeleton className="h-10 w-16" />
+                <Skeleton className="h-10 w-16 mt-2" />
               ) : (
-                <p className="text-3xl font-bold">{stats?.customerCount || 0}</p>
+                <p className="text-3xl font-bold mt-2">{stats?.customerCount || 0}</p>
               )}
             </CardContent>
           </Card>
@@ -68,45 +52,15 @@ const Dashboard = () => {
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Products</p>
               {loadingStats ? (
-                <Skeleton className="h-10 w-16" />
+                <Skeleton className="h-10 w-16 mt-2" />
               ) : (
-                <p className="text-3xl font-bold">{stats?.productCount || 0}</p>
+                <p className="text-3xl font-bold mt-2">{stats?.productCount || 0}</p>
               )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-4">
-          <button
-            onClick={() => navigate('/sale')}
-            className="flex items-center gap-3 p-4 rounded-lg border bg-card hover:bg-accent transition-colors"
-          >
-            <Plus className="h-5 w-5" />
-            <span className="font-medium">New Sale</span>
-          </button>
-          <button
-            onClick={() => navigate('/inventory')}
-            className="flex items-center gap-3 p-4 rounded-lg border bg-card hover:bg-accent transition-colors"
-          >
-            <Package className="h-5 w-5" />
-            <span className="font-medium">Inventory</span>
-          </button>
-          <button
-            onClick={() => navigate('/customers')}
-            className="flex items-center gap-3 p-4 rounded-lg border bg-card hover:bg-accent transition-colors"
-          >
-            <Users className="h-5 w-5" />
-            <span className="font-medium">Customers</span>
-          </button>
-          <button
-            onClick={() => navigate('/invoices')}
-            className="flex items-center gap-3 p-4 rounded-lg border bg-card hover:bg-accent transition-colors"
-          >
-            <Receipt className="h-5 w-5" />
-            <span className="font-medium">Invoices</span>
-          </button>
-        </div>
+        {/* Quick Actions removed - now in sidebar */}
 
         {/* Recent Orders */}
         <Card>
@@ -144,8 +98,8 @@ const Dashboard = () => {
             )}
           </CardContent>
         </Card>
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 };
 
