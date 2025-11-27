@@ -102,6 +102,23 @@ export const useProcessPayment = () => {
   });
 };
 
+export const useSendPaymentLink = () => {
+  return useMutation({
+    mutationFn: async (linkData: { order_id: string; customer_email: string; amount: number }) => {
+      const { data, error } = await supabase.functions.invoke('send-payment-link', {
+        method: 'POST',
+        body: linkData,
+      });
+      
+      if (error) throw error;
+      return data;
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to send payment link');
+    },
+  });
+};
+
 export const useDashboardStats = () => {
   return useQuery({
     queryKey: ['dashboard-stats'],
