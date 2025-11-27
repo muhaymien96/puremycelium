@@ -144,6 +144,22 @@ serve(async (req) => {
 
       if (invoiceError) {
         console.error('Error creating invoice:', invoiceError);
+      } else {
+        // Trigger PDF generation
+        try {
+          const pdfResponse = await supabase.functions.invoke('generate-invoice-pdf', {
+            body: { invoice_id: invoice.id }
+          });
+          console.log('PDF generation triggered:', pdfResponse);
+
+          // Trigger invoice delivery
+          const sendResponse = await supabase.functions.invoke('send-invoice', {
+            body: { invoice_id: invoice.id }
+          });
+          console.log('Invoice delivery triggered:', sendResponse);
+        } catch (invoiceProcessError) {
+          console.error('Error processing invoice PDF/delivery:', invoiceProcessError);
+        }
       }
 
       console.log(`CASH payment processed for order ${order_id}`);
@@ -168,12 +184,13 @@ serve(async (req) => {
       }
 
       // Create Yoco checkout
+      const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://yxjygrsmxrsmdzubzpsj.lovable.app';
       const checkoutPayload = {
         amount: Math.round(amount * 100), // Convert to cents
         currency: 'ZAR',
-        successUrl: metadata?.successUrl || `${supabaseUrl}/payment/success`,
-        cancelUrl: metadata?.cancelUrl || `${supabaseUrl}/payment/cancel`,
-        failureUrl: metadata?.failureUrl || `${supabaseUrl}/payment/failure`,
+        successUrl: metadata?.successUrl || `${frontendUrl}/payment/success`,
+        cancelUrl: metadata?.cancelUrl || `${frontendUrl}/payment/cancel`,
+        failureUrl: metadata?.failureUrl || `${frontendUrl}/payment/failure`,
         metadata: {
           order_id,
           order_number: order.order_number,
