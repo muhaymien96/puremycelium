@@ -41,6 +41,10 @@ serve(async (req) => {
         );
       }
 
+      // Convert empty strings to null for optional fields
+      const sanitizedExpiryDate = expiry_date && expiry_date.trim() !== '' ? expiry_date : null;
+      const sanitizedNotes = notes && notes.trim() !== '' ? notes : null;
+
       // Verify product exists
       const { data: product, error: productError } = await supabase
         .from('products')
@@ -64,8 +68,8 @@ serve(async (req) => {
           batch_number,
           quantity,
           production_date,
-          expiry_date,
-          notes
+          expiry_date: sanitizedExpiryDate,
+          notes: sanitizedNotes
         })
         .select()
         .single();

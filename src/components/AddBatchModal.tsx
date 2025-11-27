@@ -29,6 +29,8 @@ export const AddBatchModal = ({ open, onOpenChange, productId, productName }: Ad
       product_id: productId,
       ...formData,
       quantity: parseFloat(formData.quantity),
+      expiry_date: formData.expiry_date || null, // Convert empty string to null
+      notes: formData.notes || null, // Convert empty string to null
     });
     onOpenChange(false);
     setFormData({
