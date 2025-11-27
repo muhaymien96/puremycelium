@@ -15,7 +15,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 const NewSale = () => {
   const navigate = useNavigate();
   const [paymentMethod, setPaymentMethod] = useState<string>('');
-  const [customerId, setCustomerId] = useState<string>('');
+  const [customerId, setCustomerId] = useState<string>('none');
   const [cartItems, setCartItems] = useState<any[]>([]);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   
@@ -60,7 +60,7 @@ const NewSale = () => {
     try {
       // Create order
       const orderData = {
-        customer_id: customerId || null,
+        customer_id: customerId === 'none' ? null : customerId,
         items: cartItems.map(item => ({
           product_id: item.id,
           quantity: item.quantity,
@@ -121,9 +121,9 @@ const NewSale = () => {
               <SelectContent>
                 {loadingCustomers ? (
                   <SelectItem value="loading" disabled>Loading...</SelectItem>
-                ) : (
+                 ) : (
                   <>
-                    <SelectItem value="">No customer</SelectItem>
+                    <SelectItem value="none">No customer</SelectItem>
                     {customers?.map((customer) => (
                       <SelectItem key={customer.id} value={customer.id}>
                         {customer.first_name} {customer.last_name}
