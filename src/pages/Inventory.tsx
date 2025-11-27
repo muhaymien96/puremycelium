@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, AlertTriangle, Calendar, TrendingDown, Package } from 'lucide-react';
-import { useProducts } from '@/hooks/useProducts';
+import { Plus, AlertTriangle, Calendar, TrendingDown, Package, Trash2 } from 'lucide-react';
+import { useProducts, useDeleteProduct } from '@/hooks/useProducts';
 import { useInventoryDashboard } from '@/hooks/useInventory';
 import { AddProductModal } from '@/components/AddProductModal';
 import { AddBatchModal } from '@/components/AddBatchModal';
@@ -12,14 +12,17 @@ import { BatchHistoryModal } from '@/components/BatchHistoryModal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { EmptyState } from '@/components/EmptyState';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 const Inventory = () => {
   const { data: products, isLoading } = useProducts();
   const { data: dashboard, isLoading: loadingDashboard } = useInventoryDashboard();
+  const deleteProduct = useDeleteProduct();
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [showAddBatch, setShowAddBatch] = useState(false);
   const [showBatchHistory, setShowBatchHistory] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [productToDelete, setProductToDelete] = useState<any>(null);
 
   const LOW_STOCK_THRESHOLD = 10;
 
@@ -232,6 +235,13 @@ const Inventory = () => {
                           >
                             Add Batch
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setProductToDelete(product)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
                         </div>
                       </div>
                     </CardContent>
@@ -364,6 +374,31 @@ const Inventory = () => {
             />
           </>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!productToDelete} onOpenChange={() => setProductToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Deactivate Product</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to deactivate "{productToDelete?.name}"? This will hide it from sales but preserve historical data. This action can be reversed.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (productToDelete) {
+                    deleteProduct.mutate(productToDelete.id);
+                    setProductToDelete(null);
+                  }
+                }}
+              >
+                Deactivate
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </AppLayout>
   );

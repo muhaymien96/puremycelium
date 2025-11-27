@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Minus, CreditCard, Banknote, Link2, Mail } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Plus, Minus, CreditCard, Banknote, Link2, Mail, Search, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProducts } from '@/hooks/useProducts';
 import { useCustomers } from '@/hooks/useCustomers';
@@ -13,6 +14,7 @@ import { ProcessingModal } from '@/components/ProcessingModal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 const NewSale = () => {
   const navigate = useNavigate();
@@ -25,12 +27,50 @@ const NewSale = () => {
   const [showTerminalModal, setShowTerminalModal] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [currentOrderNumber, setCurrentOrderNumber] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [showAllProducts, setShowAllProducts] = useState(false);
   
   const { data: products, isLoading: loadingProducts } = useProducts();
   const { data: customers, isLoading: loadingCustomers } = useCustomers();
   const createOrder = useCreateOrder();
   const processPayment = useProcessPayment();
   const sendPaymentLink = useSendPaymentLink();
+
+  // Filter and sort products
+  const filteredProducts = useMemo(() => {
+    if (!products) return [];
+    
+    let filtered = products.filter(p => p.is_active !== false);
+    
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(p =>
+        p.name.toLowerCase().includes(query) ||
+        p.category.toLowerCase().includes(query)
+      );
+    }
+    
+    // Apply category filter
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(p => p.category === categoryFilter);
+    }
+    
+    // Sort by popularity (total sales) - for now, just by stock as proxy
+    return filtered.sort((a, b) => b.total_stock - a.total_stock);
+  }, [products, searchQuery, categoryFilter]);
+
+  // Top 5 products to show initially
+  const topProducts = filteredProducts.slice(0, 5);
+  const remainingProducts = filteredProducts.slice(5);
+  
+  // Get unique categories
+  const categories = useMemo(() => {
+    if (!products) return [];
+    const cats = new Set(products.map(p => p.category));
+    return Array.from(cats);
+  }, [products]);
 
   // Load cart from localStorage on mount or if retry param exists
   useEffect(() => {
@@ -255,31 +295,93 @@ const NewSale = () => {
             <CardTitle className="text-lg">Select Products</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* Search and Filters */}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search products..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-full sm:w-40">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat} className="capitalize">
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {loadingProducts ? (
               <div className="space-y-2">
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
               </div>
-            ) : products && products.length > 0 ? (
-              products.map((product) => (
-                <div key={product.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent transition-colors">
-                  <div className="flex-1">
-                    <p className="font-medium">{product.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      R {product.unit_price} • Stock: {product.total_stock}
-                    </p>
+            ) : filteredProducts.length > 0 ? (
+              <>
+                {/* Top Products (Always Visible) */}
+                {topProducts.map((product) => (
+                  <div key={product.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent transition-colors">
+                    <div className="flex-1">
+                      <p className="font-medium">{product.name}</p>
+                      <p className="text-sm text-muted-foreground capitalize">
+                        {product.category} • R {product.unit_price} • Stock: {product.total_stock}
+                      </p>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      onClick={() => addToCart({ ...product, price: product.unit_price, stock: product.total_stock })}
+                      disabled={product.total_stock === 0}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button 
-                    size="sm" 
-                    onClick={() => addToCart({ ...product, price: product.unit_price, stock: product.total_stock })}
-                    disabled={product.total_stock === 0}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))
+                ))}
+
+                {/* Remaining Products (Collapsible) */}
+                {remainingProducts.length > 0 && (
+                  <Collapsible open={showAllProducts} onOpenChange={setShowAllProducts}>
+                    <CollapsibleTrigger asChild>
+                      <Button variant="ghost" className="w-full justify-between">
+                        <span>{showAllProducts ? 'Show Less' : `Show ${remainingProducts.length} More Products`}</span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${showAllProducts ? 'rotate-180' : ''}`} />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="space-y-2 mt-2">
+                      {remainingProducts.map((product) => (
+                        <div key={product.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent transition-colors">
+                          <div className="flex-1">
+                            <p className="font-medium">{product.name}</p>
+                            <p className="text-sm text-muted-foreground capitalize">
+                              {product.category} • R {product.unit_price} • Stock: {product.total_stock}
+                            </p>
+                          </div>
+                          <Button 
+                            size="sm" 
+                            onClick={() => addToCart({ ...product, price: product.unit_price, stock: product.total_stock })}
+                            disabled={product.total_stock === 0}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+              </>
             ) : (
-              <p className="text-center text-muted-foreground py-4">No products available</p>
+              <p className="text-center text-muted-foreground py-4">
+                {searchQuery || categoryFilter !== 'all' ? 'No products match your search' : 'No products available'}
+              </p>
             )}
           </CardContent>
         </Card>

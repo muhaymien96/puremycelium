@@ -74,3 +74,25 @@ export const useCreateBatch = () => {
     },
   });
 };
+
+export const useDeleteProduct = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (productId: string) => {
+      const { error } = await supabase
+        .from('products')
+        .update({ is_active: false })
+        .eq('id', productId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success('Product deactivated successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to deactivate product');
+    },
+  });
+};
