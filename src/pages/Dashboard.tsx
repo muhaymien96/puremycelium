@@ -2,8 +2,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useDashboardStats, useOrders } from '@/hooks/useOrders';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { EmptyState } from '@/components/EmptyState';
+import { ShoppingBag } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const { data: stats, isLoading: loadingStats } = useDashboardStats();
   const { data: recentOrders, isLoading: loadingOrders } = useOrders();
 
@@ -74,7 +78,7 @@ const Dashboard = () => {
             ) : recentOrders && recentOrders.length > 0 ? (
               <div className="space-y-3">
                 {recentOrders.map((order) => (
-                  <div key={order.id} className="border rounded-lg p-3">
+                  <div key={order.id} className="border rounded-lg p-3 hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => navigate('/orders')}>
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-semibold">{order.order_number}</p>
@@ -94,7 +98,13 @@ const Dashboard = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-center text-muted-foreground py-8">No orders yet</p>
+              <EmptyState
+                icon={ShoppingBag}
+                title="No orders yet"
+                description="Start making sales to see your recent orders here"
+                actionLabel="Create New Sale"
+                onAction={() => navigate('/sale')}
+              />
             )}
           </CardContent>
         </Card>

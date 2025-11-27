@@ -9,6 +9,7 @@ import { useProducts } from '@/hooks/useProducts';
 import { useCustomers } from '@/hooks/useCustomers';
 import { useCreateOrder, useProcessPayment, useSendPaymentLink } from '@/hooks/useOrders';
 import { AddCustomerModal } from '@/components/AddCustomerModal';
+import { ProcessingModal } from '@/components/ProcessingModal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { supabase } from '@/integrations/supabase/client';
@@ -21,6 +22,9 @@ const NewSale = () => {
   const [cartItems, setCartItems] = useState<any[]>([]);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [sendLinkToCustomer, setSendLinkToCustomer] = useState(false);
+  const [showTerminalModal, setShowTerminalModal] = useState(false);
+  const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const [currentOrderNumber, setCurrentOrderNumber] = useState<string | null>(null);
   
   const { data: products, isLoading: loadingProducts } = useProducts();
   const { data: customers, isLoading: loadingCustomers } = useCustomers();
@@ -175,7 +179,13 @@ const NewSale = () => {
         toast.success(`Payment link sent to ${selectedCustomer?.email}`);
         navigate('/dashboard');
         
-      } else if (paymentMethod === 'PAYMENT_LINK' || paymentMethod === 'YOKO_WEBPOS') {
+      } else if (paymentMethod === 'YOKO_WEBPOS') {
+        // Show terminal payment modal
+        setCurrentOrderId(order.id);
+        setCurrentOrderNumber(order.order_number);
+        setShowTerminalModal(true);
+        
+      } else if (paymentMethod === 'PAYMENT_LINK') {
         // Redirect user to payment (existing flow)
         const paymentData = {
           order_id: order.id,
@@ -367,6 +377,41 @@ const NewSale = () => {
         </Card>
 
         <AddCustomerModal open={showCustomerModal} onOpenChange={setShowCustomerModal} />
+
+        {showTerminalModal && currentOrderId && (
+          <ProcessingModal
+            isOpen={showTerminalModal}
+            amount={total}
+            orderNumber={currentOrderNumber || undefined}
+            onConfirm={async () => {
+              try {
+                const paymentData = {
+                  order_id: currentOrderId,
+                  payment_method: 'YOKO_WEBPOS',
+                  amount: total,
+                  manual_terminal_confirmation: true,
+                };
+                await processPayment.mutateAsync(paymentData);
+                
+                // Clear cart after successful payment
+                localStorage.removeItem('newSaleCart');
+                setCartItems([]);
+                setCustomerId('none');
+                setShowTerminalModal(false);
+                
+                navigate(`/payment/success?orderId=${currentOrderId}`);
+              } catch (error) {
+                console.error('Terminal payment confirmation error:', error);
+                toast.error('Failed to confirm payment');
+              }
+            }}
+            onCancel={() => {
+              setShowTerminalModal(false);
+              toast.info('Payment cancelled. Cart preserved.');
+            }}
+            isProcessing={processPayment.isPending}
+          />
+        )}
       </div>
     </AppLayout>
   );
