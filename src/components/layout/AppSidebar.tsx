@@ -1,4 +1,4 @@
-import { Home, Plus, Package, Users, Receipt, BarChart3, LogOut } from 'lucide-react';
+import { Home, Plus, ShoppingCart, Package, Users, Receipt, BarChart3, LogOut } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 const menuItems = [
   { title: 'Dashboard', url: '/dashboard', icon: Home },
   { title: 'New Sale', url: '/sale', icon: Plus },
+  { title: 'Orders', url: '/orders', icon: ShoppingCart },
   { title: 'Inventory', url: '/inventory', icon: Package },
   { title: 'Customers', url: '/customers', icon: Users },
   { title: 'Invoices', url: '/invoices', icon: Receipt },

@@ -1,11 +1,11 @@
-import { Home, Plus, Package, Users, BarChart3 } from 'lucide-react';
+import { Home, Plus, ShoppingCart, Package, BarChart3 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const navItems = [
   { label: 'Home', path: '/dashboard', icon: Home },
   { label: 'Sale', path: '/sale', icon: Plus },
+  { label: 'Orders', path: '/orders', icon: ShoppingCart },
   { label: 'Stock', path: '/inventory', icon: Package },
-  { label: 'Customers', path: '/customers', icon: Users },
   { label: 'Reports', path: '/reports', icon: BarChart3 },
 ];
 

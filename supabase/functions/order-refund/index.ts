@@ -34,7 +34,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { order_id, payment_id, amount, reason, notes } = body;
+    const { order_id, payment_id, amount, reason, notes, items } = body;
 
     if (!order_id || !amount) {
       return new Response(
@@ -161,6 +161,53 @@ serve(async (req) => {
       );
     }
 
+    // Process stock adjustment if items are provided
+    if (items && items.length > 0) {
+      console.log('Processing stock adjustment for refunded items:', items);
+      
+      for (const item of items) {
+        // Return stock to batch
+        if (item.batch_id) {
+          const { data: batch } = await supabase
+            .from('product_batches')
+            .select('quantity')
+            .eq('id', item.batch_id)
+            .single();
+
+          if (batch) {
+            const { error: batchError } = await supabase
+              .from('product_batches')
+              .update({
+                quantity: Number(batch.quantity) + Number(item.quantity)
+              })
+              .eq('id', item.batch_id);
+
+            if (batchError) {
+              console.error('Error updating batch quantity:', batchError);
+            }
+          }
+        }
+
+        // Create stock movement record
+        const { error: movementError } = await supabase
+          .from('stock_movements')
+          .insert({
+            product_id: item.product_id,
+            batch_id: item.batch_id,
+            quantity: item.quantity,
+            movement_type: 'IN',
+            reference_type: 'REFUND',
+            reference_id: refund.id,
+            notes: `Refund for order ${order.order_number}`,
+            created_by: user.id
+          });
+
+        if (movementError) {
+          console.error('Error creating stock movement:', movementError);
+        }
+      }
+    }
+
     // For CASH payments, immediately mark as completed
     if (payment && payment.payment_method === 'CASH') {
       await supabase
@@ -178,6 +225,26 @@ serve(async (req) => {
         .eq('id', payment.id);
 
       console.log(`CASH refund completed for order ${order_id}`);
+    }
+
+    // Update order status based on refund amount
+    const totalRefundedAmount = Number(amount) + (order.refunds?.reduce(
+      (sum: number, r: any) => sum + (r.status === 'completed' ? Number(r.amount) : 0),
+      0
+    ) || 0);
+
+    let newOrderStatus = order.status;
+    if (totalRefundedAmount >= Number(order.total_amount)) {
+      newOrderStatus = 'refunded';
+    } else if (totalRefundedAmount > 0) {
+      newOrderStatus = 'partially_refunded';
+    }
+
+    if (newOrderStatus !== order.status) {
+      await supabase
+        .from('orders')
+        .update({ status: newOrderStatus })
+        .eq('id', order_id);
     }
 
     return new Response(
