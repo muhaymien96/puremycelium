@@ -229,7 +229,7 @@ serve(async (req) => {
           amount,
           payment_method,
           payment_status: 'pending',
-          provider_payment_id: yocoData.id,
+          checkout_id: yocoData.id, // Store checkout ID
           created_by: user.id
         })
         .select()
