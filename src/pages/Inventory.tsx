@@ -1,16 +1,15 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Plus, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle } from 'lucide-react';
 import { useProducts } from '@/hooks/useProducts';
 import { AddProductModal } from '@/components/AddProductModal';
 import { AddBatchModal } from '@/components/AddBatchModal';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 const Inventory = () => {
-  const navigate = useNavigate();
   const { data: products, isLoading } = useProducts();
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [showAddBatch, setShowAddBatch] = useState(false);
@@ -19,23 +18,18 @@ const Inventory = () => {
   const LOW_STOCK_THRESHOLD = 5;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b bg-card sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-xl font-bold">Inventory</h1>
+    <AppLayout>
+      <div className="p-4 md:p-6 space-y-6 pb-20 md:pb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Inventory</h1>
+            <p className="text-sm text-muted-foreground">Manage your products and stock levels</p>
           </div>
           <Button size="sm" onClick={() => setShowAddProduct(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Product
           </Button>
         </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
         {isLoading ? (
           <div className="space-y-4">
             <Skeleton className="h-24 w-full" />
@@ -109,8 +103,8 @@ const Inventory = () => {
             productName={selectedProduct.name}
           />
         )}
-      </main>
-    </div>
+      </div>
+    </AppLayout>
   );
 };
 
