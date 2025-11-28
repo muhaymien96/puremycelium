@@ -28,7 +28,8 @@ async function globalSetup(config: FullConfig) {
     
     // Wait for the page to fully load
     console.log('✅ Auth page loaded, waiting for React to hydrate...');
-    
+    await page.waitForLoadState('networkidle', { timeout: 60000 });
+    console.log('📍 Current URL:', page.url());
     // Wait for React app to mount - look for the main app content
     await page.waitForSelector('h1', { state: 'visible', timeout: 30000 });
     console.log('✅ Page content visible');
