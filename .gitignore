@@ -34,3 +34,15 @@ dist-ssr
 
 # MCP Server configs with credentials
 .mcp/supabase-config.json
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/storage/
+
+# Allure
+/allure-results/
+/allure-report/
+/.allure/
