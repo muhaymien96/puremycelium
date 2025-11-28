@@ -104,9 +104,111 @@ TEST_USER_EMAIL=your-test-email@example.com
 TEST_USER_PASSWORD=your-password
 ```
 
+## API Tests (Playwright Request API)
+
+Located in `tests/api/`, these tests directly validate Supabase Edge Functions without a browser.
+
+### API Test Files
+- `products.api.spec.ts` - Products endpoint (GET, POST validations)
+- `orders.api.spec.ts` - Orders endpoint (POST validations, error cases)
+- `fixtures/api-fixtures.ts` - Shared API request context with auth
+
+### Running API Tests
+```bash
+npm run test:api
+```
+
+### Required Environment Variables
+```env
+PLAYWRIGHT_API_BASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+PLAYWRIGHT_DEFAULT_PRODUCT_ID=valid-product-uuid
+PLAYWRIGHT_DEFAULT_CUSTOMER_ID=valid-customer-uuid
+```
+
+## Performance Tests (k6)
+
+Located in `tests/performance/k6/`, these load tests measure API response times and throughput.
+
+### k6 Test Files
+- `products-load.test.js` - Load test for products endpoint (GET)
+- `orders-load.test.js` - Load test for orders creation (POST)
+- `utils/supabaseClient.js` - Shared k6 Supabase client
+
+### Running Performance Tests
+```bash
+npm run perf:k6:products   # Products only
+npm run perf:k6:orders     # Orders only
+npm run perf:k6            # Both
+```
+
+### Required Environment Variables
+```env
+K6_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+K6_DEFAULT_PRODUCT_ID=valid-product-uuid
+K6_DEFAULT_CUSTOMER_ID=valid-customer-uuid
+```
+
+### k6 Installation
+**Windows:**
+```powershell
+winget install grafana.k6
+# or
+choco install k6
+```
+
+**Linux/Mac:**
+```bash
+brew install k6
+```
+
+## Helper Script (Windows)
+
+For easy test execution with automatic env loading:
+
+```powershell
+.\run-tests.ps1
+```
+
+This script:
+1. Loads variables from `.env.tests`
+2. Presents a menu to run specific test types
+3. Shows clear success/failure status
+
+## CI/CD Integration
+
+### Main Pipeline (`.github/workflows/test-deploy.yml`)
+Runs on every push to `test` branch:
+- E2E tests (Playwright UI)
+- **API tests** (Playwright Request) ⚠️ NEW
+- Build and deploy to Netlify
+
+### Performance Pipeline (`.github/workflows/performance.yml`)
+Runs separately (on-demand or nightly):
+- k6 load tests for products and orders
+- Triggered manually or on schedule
+- Can choose smoke/baseline/all test levels
+
+### Required GitHub Secrets
+**Existing:**
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_SUPABASE_PROJECT_ID`
+- `TEST_USER_EMAIL`
+- `TEST_USER_PASSWORD`
+- `NETLIFY_AUTH_TOKEN`
+- `NETLIFY_TEST_SITE_ID`
+
+**New (for API/Performance):**
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role key for API tests
+- `TEST_PRODUCT_ID` - Valid product UUID for order tests
+- `TEST_CUSTOMER_ID` - Valid customer UUID for order tests
+
 ## Reports
-- Playwright HTML report: `playwright-report/`
-- Allure results: `allure-results/`
-- Allure HTML report: `allure-report/`
-- Screenshots: Captured on test failure
-- Videos: Captured on test failure (retention-on-failure)
+- **E2E/API:** Playwright HTML report at `playwright-report/`
+- **Allure:** Allure results in `allure-results/`, HTML report in `allure-report/`
+- **k6:** Console output with summary (p95 latency, error rate, throughput)
+- **Screenshots:** Captured on test failure
+- **Videos:** Captured on test failure (retention-on-failure)

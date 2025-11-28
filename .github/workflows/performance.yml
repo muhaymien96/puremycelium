@@ -1,0 +1,103 @@
+name: Performance Tests
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of performance test to run'
+        required: true
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - baseline
+          - all
+  
+  # Optional: Run nightly on test branch
+  schedule:
+    - cron: '0 2 * * *'  # 2 AM UTC daily
+  
+  # Optional: Run on specific branches when requested
+  push:
+    branches:
+      - test
+    paths:
+      - 'tests/performance/**'
+      - 'supabase/functions/**'
+
+jobs:
+  k6-performance:
+    runs-on: ubuntu-latest
+    environment: puremycelium
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Verify k6 installation
+        run: k6 version
+
+      - name: Run k6 Products Load Test
+        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'baseline' || github.event_name != 'workflow_dispatch' }}
+        run: npm run perf:k6:products
+        env:
+          K6_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Run k6 Orders Load Test
+        if: ${{ github.event.inputs.test_type == 'all' || github.event.inputs.test_type == 'baseline' || github.event_name != 'workflow_dispatch' }}
+        run: npm run perf:k6:orders
+        env:
+          K6_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          K6_DEFAULT_PRODUCT_ID: ${{ secrets.TEST_PRODUCT_ID }}
+          K6_DEFAULT_CUSTOMER_ID: ${{ secrets.TEST_CUSTOMER_ID }}
+
+      - name: Run k6 Smoke Tests Only
+        if: ${{ github.event.inputs.test_type == 'smoke' }}
+        run: |
+          echo "Running smoke tests with reduced VUs and duration..."
+          # Future: add --env K6_SCENARIO=smoke flag to k6 scripts
+          npm run perf:k6:products
+          npm run perf:k6:orders
+        env:
+          K6_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          K6_DEFAULT_PRODUCT_ID: ${{ secrets.TEST_PRODUCT_ID }}
+          K6_DEFAULT_CUSTOMER_ID: ${{ secrets.TEST_CUSTOMER_ID }}
+
+      - name: Upload k6 results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-performance-results
+          path: |
+            test-results/performance/
+          retention-days: 30
+
+      - name: Comment PR with performance summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Performance tests completed. Check the Actions artifacts for detailed k6 results.'
+            })

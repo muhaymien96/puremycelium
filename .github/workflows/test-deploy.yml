@@ -60,7 +60,7 @@ jobs:
           echo "TEST_USER_PASSWORD=${{ secrets.TEST_USER_PASSWORD }}" >> .env
           echo "✅ Created .env file for Vite dev server"
 
-      - name: Run Playwright tests
+      - name: Run Playwright E2E tests
         run: npm run test:e2e -- --project=chromium --project=auth-chromium
         env:
           CI: true
@@ -72,6 +72,15 @@ jobs:
           VITE_APP_ENV: test
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+
+      - name: Run API tests
+        run: npm run test:api
+        env:
+          CI: true
+          PLAYWRIGHT_API_BASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PLAYWRIGHT_DEFAULT_PRODUCT_ID: ${{ secrets.TEST_PRODUCT_ID }}
+          PLAYWRIGHT_DEFAULT_CUSTOMER_ID: ${{ secrets.TEST_CUSTOMER_ID }}
 
       - name: Upload Playwright Report
         uses: actions/upload-artifact@v4

@@ -15,7 +15,11 @@
     "test:e2e:report": "playwright show-report",
     "test:allure": "allure generate allure-results --clean -o allure-report",
     "test:allure:open": "allure open allure-report",
-    "test:allure:serve": "allure serve allure-results"
+    "test:allure:serve": "allure serve allure-results",
+    "test:api": "playwright test --config=playwright.api.config.ts",
+    "perf:k6:products": "k6 run tests/performance/k6/products-load.test.js",
+    "perf:k6:orders": "k6 run tests/performance/k6/orders-load.test.js",
+    "perf:k6": "npm run perf:k6:products; npm run perf:k6:orders"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
