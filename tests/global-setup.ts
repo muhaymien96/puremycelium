@@ -22,21 +22,59 @@ async function globalSetup(config: FullConfig) {
     const testPassword = process.env.TEST_USER_PASSWORD || '123456';
     console.log(`👤 Using credentials: ${testEmail}`);
 
-    // Navigate to auth page
+    // In CI, wait a bit for the dev server to be fully ready
+    if (process.env.CI) {
+      console.log('⏳ CI detected, waiting for dev server to stabilize...');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+
+    // Navigate to auth page with retry logic for CI stability
     console.log(`🌐 Navigating to ${baseURL}/auth...`);
-    await page.goto(`${baseURL}/auth`, { waitUntil: 'networkidle', timeout: 60000 });
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        await page.goto(`${baseURL}/auth`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        break;
+      } catch (navError) {
+        retries--;
+        if (retries === 0) throw navError;
+        console.log(`⚠️ Navigation failed, retrying... (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+    }
     
     // Wait for the page to fully load
     console.log('✅ Auth page loaded, waiting for React to hydrate...');
     await page.waitForLoadState('networkidle', { timeout: 60000 });
     console.log('📍 Current URL:', page.url());
-    // Wait for React app to mount - look for the main app content
-    await page.waitForSelector('h1', { state: 'visible', timeout: 30000 });
-    console.log('✅ Page content visible');
+    
+    // Wait for React app to mount with better error handling
+    // First wait for body to have content (React mounted)
+    await page.waitForFunction(
+      () => document.body && document.body.innerHTML.length > 100,
+      { timeout: 30000 }
+    );
+    console.log('✅ React app appears to be mounted');
+    
+    // Now wait for either h1 or the auth form to be visible
+    try {
+      await page.waitForSelector('h1, #signin-email, input[type="email"]', { state: 'visible', timeout: 30000 });
+      console.log('✅ Page content visible');
+    } catch (selectorError) {
+      // Log page content for debugging
+      const bodyHTML = await page.evaluate(() => document.body?.innerHTML?.substring(0, 500) || 'No body');
+      console.log('📄 Page body preview:', bodyHTML);
+      throw selectorError;
+    }
     
     // Log current page state for debugging
-    const pageTitle = await page.locator('h1').first().textContent();
-    console.log(`📄 Page title: ${pageTitle}`);
+    const h1Element = page.locator('h1').first();
+    if (await h1Element.isVisible().catch(() => false)) {
+      const pageTitle = await h1Element.textContent();
+      console.log(`📄 Page title: ${pageTitle}`);
+    } else {
+      console.log('📄 No h1 found, continuing with auth form...');
+    }
     
     // Wait for the Sign In tab content to be visible (default tab)
     // The auth page uses tabs with specific input IDs
