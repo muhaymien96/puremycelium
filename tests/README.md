@@ -34,7 +34,7 @@ Playwright tests in `tests/e2e/`:
 ### Test Fixtures
 Located in `tests/fixtures/fixtures.ts`:
 - `pageManager` - Provides access to all page objects (for auth tests)
-- `authenticatedPageManager` - Provides page objects with authenticated session (for app tests)
+- `authenticatedPageManager` - Provides page objects with authenticated session (for app tests).
 
 ## Test Execution Flow
 
