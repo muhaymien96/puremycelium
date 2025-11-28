@@ -30,10 +30,15 @@ async function globalSetup(config: FullConfig) {
     await page.waitForLoadState('networkidle', { timeout: 30000 });
     console.log('✅ Auth page loaded');
 
-    // Fill in credentials and sign in
+    // Wait for the Sign In tab content to be visible (default tab)
+    // The auth page uses tabs with specific input IDs
+    await page.waitForSelector('#signin-email', { state: 'visible', timeout: 30000 });
+    console.log('✅ Sign In form is visible');
+
+    // Fill in credentials and sign in using specific IDs
     console.log('📝 Filling in credentials...');
-    await page.fill('input[type="email"]', testEmail);
-    await page.fill('input[type="password"]', testPassword);
+    await page.fill('#signin-email', testEmail);
+    await page.fill('#signin-password', testPassword);
     
     console.log('🔘 Clicking sign in button...');
     await page.getByRole('button', { name: /sign in/i }).click();
