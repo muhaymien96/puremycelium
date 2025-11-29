@@ -11,6 +11,13 @@ export class NewSalePage extends BasePage {
   private readonly paymentMethodSection: Locator;
   private readonly customerSelect: Locator;
   private readonly cartItems: Locator;
+  private readonly cashPaymentButton: Locator;
+  private readonly cardPaymentButton: Locator;
+  private readonly paymentLinkButton: Locator;
+  private readonly sendToCustomerCheckbox: Locator;
+  private readonly sendToCustomerLabel: Locator;
+  private readonly completeSaleButton: Locator;
+  private readonly addCustomerButton: Locator;
 
   constructor(page: Page) {
     super(page);
@@ -23,6 +30,13 @@ export class NewSalePage extends BasePage {
     this.paymentMethodSection = page.getByText(/payment method/i);
     this.customerSelect = page.getByRole('button', { name: /select customer/i }).or(page.getByPlaceholder(/customer/i));
     this.cartItems = page.locator('[data-testid="cart-item"]');
+    this.cashPaymentButton = page.locator('button:has-text("Cash")');
+    this.cardPaymentButton = page.locator('button:has-text("Card (Yoco Terminal)")');
+    this.paymentLinkButton = page.locator('button:has-text("Payment Link")');
+    this.sendToCustomerCheckbox = page.locator('#sendToCustomer');
+    this.sendToCustomerLabel = page.locator('label[for="sendToCustomer"]');
+    this.completeSaleButton = page.getByRole('button', { name: /complete sale/i });
+    this.addCustomerButton = page.locator('button:has-text("Add New Customer")');
   }
 
   async goto() {
@@ -63,5 +77,79 @@ export class NewSalePage extends BasePage {
 
   async getCartItemCount(): Promise<number> {
     return await this.cartItems.count();
+  }
+
+  async selectPaymentMethod(method: 'CASH' | 'YOKO_WEBPOS' | 'PAYMENT_LINK') {
+    switch (method) {
+      case 'CASH':
+        await this.clickElement(this.cashPaymentButton);
+        break;
+      case 'YOKO_WEBPOS':
+        await this.clickElement(this.cardPaymentButton);
+        break;
+      case 'PAYMENT_LINK':
+        await this.clickElement(this.paymentLinkButton);
+        break;
+    }
+    await this.waitForTimeout(300);
+  }
+
+  async isPaymentMethodSelected(method: 'CASH' | 'YOKO_WEBPOS' | 'PAYMENT_LINK'): Promise<boolean> {
+    let button: Locator;
+    switch (method) {
+      case 'CASH':
+        button = this.cashPaymentButton;
+        break;
+      case 'YOKO_WEBPOS':
+        button = this.cardPaymentButton;
+        break;
+      case 'PAYMENT_LINK':
+        button = this.paymentLinkButton;
+        break;
+    }
+    const classes = await button.getAttribute('class') || '';
+    return classes.includes('border-primary');
+  }
+
+  async isSendToCustomerCheckboxVisible(): Promise<boolean> {
+    return await this.isVisible(this.sendToCustomerCheckbox);
+  }
+
+  async toggleSendToCustomer() {
+    await this.clickElement(this.sendToCustomerCheckbox);
+    await this.waitForTimeout(200);
+  }
+
+  async isSendToCustomerChecked(): Promise<boolean> {
+    return await this.sendToCustomerCheckbox.isChecked();
+  }
+
+  async selectCustomer(customerName: string) {
+    await this.clickElement(this.customerSelect);
+    await this.waitForTimeout(300);
+    await this.page.getByRole('option', { name: new RegExp(customerName, 'i') }).click();
+    await this.waitForTimeout(300);
+  }
+
+  async clickCompleteSale() {
+    await this.clickElement(this.completeSaleButton);
+  }
+
+  async isCompleteSaleEnabled(): Promise<boolean> {
+    return await this.completeSaleButton.isEnabled();
+  }
+
+  async getTotal(): Promise<string> {
+    const totalElement = this.page.locator('text=/Total/').locator('..');
+    const text = await totalElement.textContent();
+    return text?.match(/R\s*([\d.]+)/)?.[1] || '0';
+  }
+
+  async addProductByName(productName: string) {
+    await this.searchProducts(productName);
+    const productCard = this.page.locator(`text=${productName}`).first();
+    const addButton = productCard.locator('xpath=ancestor::*').locator('button:has-text("Add to Cart")').first();
+    await this.clickElement(addButton);
+    await this.waitForTimeout(500);
   }
 }

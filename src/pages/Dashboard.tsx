@@ -20,51 +20,65 @@ const Dashboard = () => {
             Welcome back! Here's an overview of your business.
           </p>
         </div>
+
         {/* Stats Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Total Sales */}
           <Card>
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Total Sales</p>
               {loadingStats ? (
                 <Skeleton className="h-10 w-32 mt-2" />
               ) : (
-                <p className="text-3xl font-bold mt-2">R {stats?.totalSales.toFixed(2) || '0.00'}</p>
+                <p className="text-3xl font-bold mt-2">
+                  R {(stats?.totalSales || 0).toFixed(2)}
+                </p>
               )}
             </CardContent>
           </Card>
+
+          {/* Orders Count */}
           <Card>
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Orders</p>
               {loadingStats ? (
                 <Skeleton className="h-10 w-16 mt-2" />
               ) : (
-                <p className="text-3xl font-bold mt-2">{stats?.orderCount || 0}</p>
+                <p className="text-3xl font-bold mt-2">
+                  {stats?.orderCount || 0}
+                </p>
               )}
             </CardContent>
           </Card>
+
+          {/* Customers Count */}
           <Card>
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Customers</p>
               {loadingStats ? (
                 <Skeleton className="h-10 w-16 mt-2" />
               ) : (
-                <p className="text-3xl font-bold mt-2">{stats?.customerCount || 0}</p>
+                <p className="text-3xl font-bold mt-2">
+                  {stats?.customerCount || 0}
+                </p>
               )}
             </CardContent>
           </Card>
+
+          {/* Products Count */}
           <Card>
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Products</p>
               {loadingStats ? (
                 <Skeleton className="h-10 w-16 mt-2" />
               ) : (
-                <p className="text-3xl font-bold mt-2">{stats?.productCount || 0}</p>
+                <p className="text-3xl font-bold mt-2">
+                  {stats?.productCount || 0}
+                </p>
               )}
             </CardContent>
           </Card>
         </div>
-
-        {/* Quick Actions removed - now in sidebar */}
 
         {/* Recent Orders */}
         <Card>
@@ -78,20 +92,30 @@ const Dashboard = () => {
             ) : recentOrders && recentOrders.length > 0 ? (
               <div className="space-y-3">
                 {recentOrders.map((order) => (
-                  <div key={order.id} className="border rounded-lg p-3 hover:bg-muted/50 transition-colors cursor-pointer" onClick={() => navigate('/orders')}>
+                  <div
+                    key={order.id}
+                    className="border rounded-lg p-3 hover:bg-muted/50 transition-colors cursor-pointer"
+                    onClick={() => navigate('/orders')}
+                  >
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-semibold">{order.order_number}</p>
                         <p className="text-sm text-muted-foreground">
-                          {order.customers?.first_name} {order.customers?.last_name}
+                          {order.customers
+                            ? `${order.customers.first_name} ${order.customers.last_name}`
+                            : 'Walk-in Customer'}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {new Date(order.created_at).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold">R {Number(order.total_amount).toFixed(2)}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{order.status}</p>
+                        <p className="font-bold">
+                          R {Number(order.total_amount).toFixed(2)}
+                        </p>
+                        <p className="text-xs text-muted-foreground capitalize">
+                          {order.status}
+                        </p>
                       </div>
                     </div>
                   </div>

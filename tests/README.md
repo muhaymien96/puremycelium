@@ -30,6 +30,7 @@ Playwright tests in `tests/e2e/`:
 - `customers.spec.ts` - Customer management (authenticated via storage state)
 - `reports.spec.ts` - Reports viewing (authenticated via storage state)
 - `new-sale.spec.ts` - POS operations (authenticated via storage state)
+- `payment-link.spec.ts` - Payment link UI and flow tests (authenticated via storage state)
 
 ### Test Fixtures
 Located in `tests/fixtures/fixtures.ts`:
@@ -82,6 +83,23 @@ npm run test:allure:open
 npm run test:allure:serve
 ```
 
+### Code Coverage (Frontend)
+```bash
+# Run E2E tests with coverage
+npm run test:e2e:coverage
+
+# View coverage report
+npm run test:e2e:coverage:report
+```
+
+Coverage report will be generated in `coverage/` directory with:
+- Line coverage - which lines of code were executed
+- Branch coverage - which code branches (if/else) were taken
+- Function coverage - which functions were called
+- Statement coverage - which statements were executed
+
+**Note:** Coverage only tracks frontend code (`src/`), not Edge Functions.
+
 ## Environment Variables
 Required for tests:
 - `TEST_USER_EMAIL` - Test user email (defaults to 'test@example.com' if not set)
@@ -111,7 +129,9 @@ Located in `tests/api/`, these tests directly validate Supabase Edge Functions w
 ### API Test Files
 - `products.api.spec.ts` - Products endpoint (GET, POST validations)
 - `orders.api.spec.ts` - Orders endpoint (POST validations, error cases)
+- `checkout.api.spec.ts` - Payment processing (CASH, Yoco, refunds, error cases)
 - `fixtures/api-fixtures.ts` - Shared API request context with auth
+- `COVERAGE.md` - Test coverage matrix tracking all Edge Functions
 
 ### Running API Tests
 ```bash
@@ -121,10 +141,22 @@ npm run test:api
 ### Required Environment Variables
 ```env
 PLAYWRIGHT_API_BASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+SUPABASE_ANON_KEY=your_anon_key
+TEST_USER_EMAIL=test@example.com
+TEST_USER_PASSWORD=testpassword123
 PLAYWRIGHT_DEFAULT_PRODUCT_ID=valid-product-uuid
 PLAYWRIGHT_DEFAULT_CUSTOMER_ID=valid-customer-uuid
+TEST_CARD_NUMBER=4111111111111111
+TEST_CARD_EXPIRY=12/34
+TEST_CARD_CVC=123
 ```
+
+### Coverage Tracking
+See `tests/api/COVERAGE.md` for:
+- Detailed coverage matrix for all Edge Functions
+- Test case inventory (validated scenarios)
+- Coverage percentage by endpoint category
+- Roadmap for additional test cases
 
 ## Performance Tests (k6)
 

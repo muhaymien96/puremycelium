@@ -36,6 +36,7 @@ export function RefundModal({ order, isOpen, onClose }: RefundModalProps) {
   const isYocoPayment = payment && (payment.payment_method === 'YOKO_WEBPOS' || payment.payment_method === 'PAYMENT_LINK');
   const hasCheckoutId = payment?.checkout_id;
 
+  const queryClient = processRefund.options?.queryClient || undefined;
   const handleSubmit = async () => {
     if (Number(amount) <= 0 || Number(amount) > maxRefundAmount) {
       toast.error(`Refund amount must be between R0.01 and R${maxRefundAmount.toFixed(2)}`);
@@ -68,6 +69,11 @@ export function RefundModal({ order, isOpen, onClose }: RefundModalProps) {
       {
         onSuccess: () => {
           toast.success('Refund processed successfully');
+          // Invalidate products and inventory-dashboard queries to update stock on hand
+          if (queryClient) {
+            queryClient.invalidateQueries({ queryKey: ['products'] });
+            queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+          }
           onClose();
         },
         onError: (error: any) => {

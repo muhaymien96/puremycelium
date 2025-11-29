@@ -32,7 +32,7 @@ serve(async (req) => {
 
     if (req.method === 'POST') {
       const body = await req.json();
-      const { product_id, batch_number, quantity, production_date, expiry_date, notes } = body;
+      const { product_id, batch_number, quantity, production_date, expiry_date, notes, cost_per_unit } = body;
 
       if (!product_id || !batch_number || quantity === undefined || !production_date) {
         return new Response(
@@ -69,7 +69,8 @@ serve(async (req) => {
           quantity,
           production_date,
           expiry_date: sanitizedExpiryDate,
-          notes: sanitizedNotes
+          notes: sanitizedNotes,
+          cost_per_unit: cost_per_unit !== undefined ? cost_per_unit : null
         })
         .select()
         .single();

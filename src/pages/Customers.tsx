@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, Mail, Phone, Users, Trash2 } from 'lucide-react';
+import { Plus, Mail, Phone, Users, Trash2, Pencil } from 'lucide-react';
 import { useCustomers, useDeleteCustomer } from '@/hooks/useCustomers';
+import { EditCustomerModal } from '@/components/EditCustomerModal';
 import { AddCustomerModal } from '@/components/AddCustomerModal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -15,6 +16,8 @@ const Customers = () => {
   const { data: customers, isLoading } = useCustomers();
   const deleteCustomer = useDeleteCustomer();
   const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [showEditCustomer, setShowEditCustomer] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [customerToDelete, setCustomerToDelete] = useState<any>(null);
 
   return (
@@ -66,16 +69,30 @@ const Customers = () => {
                       )}
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCustomerToDelete(customer);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setSelectedCustomer(customer);
+                        setShowEditCustomer(true);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setCustomerToDelete(customer);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -91,6 +108,11 @@ const Customers = () => {
         )}
 
         <AddCustomerModal open={showAddCustomer} onOpenChange={setShowAddCustomer} />
+        <EditCustomerModal
+          open={showEditCustomer}
+          onOpenChange={setShowEditCustomer}
+          customer={showEditCustomer ? selectedCustomer : null}
+        />
 
         {/* Delete Confirmation Dialog */}
         <AlertDialog open={!!customerToDelete} onOpenChange={() => setCustomerToDelete(null)}>

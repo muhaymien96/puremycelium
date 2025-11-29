@@ -1,10 +1,33 @@
 import { test, expect } from './fixtures/api-fixtures';
+import { createClient } from '@supabase/supabase-js';
 
 const PRODUCTS_PATH = '/functions/v1/products';
 
 // Basic contract + behavior tests for products edge function
 
 test.describe('Products API', () => {
+  test.afterEach(async () => {
+    // Cleanup: Mark test products as inactive
+    const supabase = createClient(
+      process.env.VITE_SUPABASE_URL!,
+      process.env.VITE_SUPABASE_ANON_KEY!
+    );
+    
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase
+        .from('products')
+        .update({ 
+          is_active: false,
+          deactivated_at: new Date().toISOString(),
+          deactivated_reason: 'Automated test cleanup',
+          deactivated_by: user.id
+        })
+        .like('name', 'Test Product%')
+        .eq('is_active', true);
+    }
+  });
+
   test('GET /products returns products array with stock info', async ({ api }) => {
     const res = await api.get(PRODUCTS_PATH);
 

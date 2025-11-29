@@ -14,6 +14,7 @@ import Inventory from "./pages/Inventory";
 import Customers from "./pages/Customers";
 import Invoices from "./pages/Invoices";
 import Reports from "./pages/Reports";
+import Admin from "./pages/Admin";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentCancel from "./pages/PaymentCancel";
 import PaymentFailure from "./pages/PaymentFailure";
@@ -38,6 +39,7 @@ const App = () => (
             <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
             <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute requireAdmin><Admin /></ProtectedRoute>} />
             <Route path="/payment/success" element={<PaymentSuccess />} />
             <Route path="/payment/cancel" element={<PaymentCancel />} />
             <Route path="/payment/failure" element={<PaymentFailure />} />
