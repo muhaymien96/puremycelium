@@ -18,6 +18,7 @@ export const AddBatchModal = ({ open, onOpenChange, productId, productName }: Ad
   const [formData, setFormData] = useState({
     batch_number: '',
     quantity: '',
+    cost_per_unit: '',
     production_date: new Date().toISOString().split('T')[0],
     expiry_date: '',
     notes: '',
@@ -29,6 +30,7 @@ export const AddBatchModal = ({ open, onOpenChange, productId, productName }: Ad
       product_id: productId,
       ...formData,
       quantity: parseFloat(formData.quantity),
+      cost_per_unit: formData.cost_per_unit ? parseFloat(formData.cost_per_unit) : null,
       expiry_date: formData.expiry_date || null, // Convert empty string to null
       notes: formData.notes || null, // Convert empty string to null
     });
@@ -36,6 +38,7 @@ export const AddBatchModal = ({ open, onOpenChange, productId, productName }: Ad
     setFormData({
       batch_number: '',
       quantity: '',
+      cost_per_unit: '',
       production_date: new Date().toISOString().split('T')[0],
       expiry_date: '',
       notes: '',
@@ -67,6 +70,17 @@ export const AddBatchModal = ({ open, onOpenChange, productId, productName }: Ad
               value={formData.quantity}
               onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
               required
+            />
+          </div>
+          <div>
+            <Label htmlFor="cost_per_unit">Cost Per Unit (R)</Label>
+            <Input
+              id="cost_per_unit"
+              type="number"
+              step="0.01"
+              value={formData.cost_per_unit}
+              onChange={(e) => setFormData({ ...formData, cost_per_unit: e.target.value })}
+              placeholder="Optional"
             />
           </div>
           <div>

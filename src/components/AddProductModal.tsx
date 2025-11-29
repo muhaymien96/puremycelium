@@ -18,6 +18,7 @@ export const AddProductModal = ({ open, onOpenChange }: AddProductModalProps) =>
     name: '',
     category: 'honey',
     unit_price: '',
+    // ...existing code...
     description: '',
     sku: '',
     unit_of_measure: 'kg',
@@ -28,12 +29,14 @@ export const AddProductModal = ({ open, onOpenChange }: AddProductModalProps) =>
     await createProduct.mutateAsync({
       ...formData,
       unit_price: parseFloat(formData.unit_price),
+      // ...existing code...
     });
     onOpenChange(false);
     setFormData({
       name: '',
       category: 'honey',
       unit_price: '',
+      // ...existing code...
       description: '',
       sku: '',
       unit_of_measure: 'kg',
@@ -80,6 +83,7 @@ export const AddProductModal = ({ open, onOpenChange }: AddProductModalProps) =>
               required
             />
           </div>
+          {/* Cost price removed: cost is now batch-level only */}
           <div>
             <Label htmlFor="sku">SKU (Optional)</Label>
             <Input

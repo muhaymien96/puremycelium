@@ -128,67 +128,129 @@ serve(async (req) => {
 
       // Decrement stock for all order items
       for (const item of order.order_items) {
-        // Update batch quantity if batch_id specified
-        if (item.batch_id) {
-          const { data: batch } = await supabase
-            .from('product_batches')
-            .select('quantity')
-            .eq('id', item.batch_id)
-            .single();
+        const quantity = Number(item.quantity);
 
-          if (batch) {
-            await supabase
-              .from('product_batches')
-              .update({ quantity: Number(batch.quantity) - Number(item.quantity) })
-              .eq('id', item.batch_id);
+        if (!item.batch_id) {
+          console.warn(`Order item ${item.product_id} has no batch_id; skipping stock decrement`);
+        } else if (!Number.isFinite(quantity) || quantity <= 0) {
+          console.warn(`Invalid quantity for order item ${item.product_id}:`, item.quantity);
+        } else {
+          // Update batch quantity using RPC function for atomic update
+          const { error: batchError } = await supabase.rpc('decrement_batch_quantity', {
+            p_batch_id: item.batch_id,
+            p_quantity: quantity, // ensure numeric type
+          });
+
+          if (batchError) {
+            console.error('Error decrementing batch:', batchError);
+          } else {
+            console.log(`✅ Decremented batch ${item.batch_id} by ${quantity}`);
           }
         }
 
-        // Create stock movement (OUT)
+        // Create stock movement (OUT) with positive quantity
         await supabase.from('stock_movements').insert({
           product_id: item.product_id,
           batch_id: item.batch_id,
           movement_type: 'OUT',
-          quantity: -Math.abs(item.quantity),
+          quantity: Number(item.quantity), // positive OUT
           reference_type: 'ORDER',
           reference_id: order_id,
           notes: `Yoco payment for order ${order.order_number}`
         });
       }
 
-      // Generate invoice
-      const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
-      const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
+      // Record financial transaction
+      try {
+        const { data: orderItemsWithCosts } = await supabase
+          .from('order_items')
+          .select(`
+            quantity,
+            unit_price,
+            batch_id,
+            product_batches!inner(cost_per_unit)
+          `)
+          .eq('order_id', order_id);
 
-      const { data: invoice, error: invoiceError } = await supabase.from('invoices').insert({
-        invoice_number,
-        order_id,
-        customer_id: order.customer_id,
-        total_amount: order.total_amount,
-        tax_amount: order.tax_amount,
-        paid_amount: event.payload.amount / 100, // Convert from cents
-        status: 'paid'
-      })
-      .select()
-      .single();
+        const totalCost = orderItemsWithCosts?.reduce((sum: number, item: any) => {
+          const costPerUnit = item.product_batches?.cost_per_unit || 0;
+          return sum + (Number(item.quantity) * Number(costPerUnit));
+        }, 0) || 0;
 
-      if (invoiceError) {
-        console.error('Error creating invoice:', invoiceError);
-      } else {
-        // Trigger PDF generation
+        const amount = event.payload.amount / 100; // Convert from cents
+        const profit = amount - totalCost;
+
+        await supabase.from('financial_transactions').insert({
+          order_id,
+          transaction_type: 'sale',
+          amount: amount,
+          cost: totalCost,
+          profit: profit,
+          payment_method: 'PAYMENT_LINK',
+          notes: 'Sale completed via Yoco payment link'
+        });
+
+        console.log(`✅ Recorded financial transaction: Revenue ${amount}, Cost ${totalCost}, Profit ${profit}`);
+      } catch (finError) {
+        console.error('Failed to record financial transaction:', finError);
+        // Don't fail the webhook, just log the error
+      }
+
+      // Find existing invoice and update to paid
+      const { data: existingInvoice } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('order_id', order_id)
+        .single();
+
+      if (existingInvoice) {
+        // Update existing invoice to paid
+        await supabase.from('invoices').update({
+          paid_amount: event.payload.amount / 100,
+          status: 'paid'
+        }).eq('id', existingInvoice.id);
+
+        // Regenerate PDF with "PAID" status
         try {
-          const pdfResponse = await supabase.functions.invoke('generate-invoice-pdf', {
-            body: { invoice_id: invoice.id }
+          await supabase.functions.invoke('generate-invoice-pdf', {
+            body: { invoice_id: existingInvoice.id }
           });
-          console.log('PDF generation triggered:', pdfResponse);
 
-          // Trigger invoice delivery
-          const sendResponse = await supabase.functions.invoke('send-invoice', {
-            body: { invoice_id: invoice.id }
+          // Send receipt/thank you email
+          await supabase.functions.invoke('send-invoice', {
+            body: { invoice_id: existingInvoice.id, send_receipt: true }
           });
-          console.log('Invoice delivery triggered:', sendResponse);
-        } catch (invoiceProcessError) {
-          console.error('Error processing invoice PDF/delivery:', invoiceProcessError);
+        } catch (error) {
+          console.error('Error updating invoice:', error);
+        }
+      } else {
+        // Fallback: create new invoice if none exists (shouldn't happen normally)
+        const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
+        const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
+
+        const { data: invoice, error: invoiceError } = await supabase.from('invoices').insert({
+          invoice_number,
+          order_id,
+          customer_id: order.customer_id,
+          total_amount: order.total_amount,
+          tax_amount: order.tax_amount,
+          paid_amount: event.payload.amount / 100,
+          status: 'paid'
+        })
+        .select()
+        .single();
+
+        if (!invoiceError && invoice) {
+          try {
+            await supabase.functions.invoke('generate-invoice-pdf', {
+              body: { invoice_id: invoice.id }
+            });
+            await supabase.functions.invoke('send-invoice', {
+              body: { invoice_id: invoice.id, send_receipt: true }
+            });
+          } catch (error) {
+            console.error('Error processing new invoice:', error);
+          }
         }
       }
 
@@ -199,6 +261,13 @@ serve(async (req) => {
     if (event.type === 'refund.succeeded') {
       const refund_metadata = event.payload?.metadata;
       if (refund_metadata?.refund_id) {
+        // Get refund details
+        const { data: refund } = await supabase
+          .from('refunds')
+          .select('*, orders(id)')
+          .eq('id', refund_metadata.refund_id)
+          .single();
+
         await supabase
           .from('refunds')
           .update({ 
@@ -206,6 +275,82 @@ serve(async (req) => {
             completed_at: new Date().toISOString()
           })
           .eq('id', refund_metadata.refund_id);
+
+        // Restore stock for refunded items
+        if (refund?.orders?.id) {
+          try {
+            const { data: orderItems } = await supabase
+              .from('order_items')
+              .select('*')
+              .eq('order_id', refund.orders.id);
+
+            if (orderItems && orderItems.length > 0) {
+              for (const item of orderItems) {
+                if (item.batch_id) {
+                  const qty = Number(item.quantity);
+
+                  if (!Number.isFinite(qty) || qty <= 0) {
+                    console.warn(`Invalid quantity for refund stock restore:`, item.quantity);
+                  } else {
+                    // Increment batch quantity
+                    const { error: rpcError } = await supabase.rpc('increment_batch_quantity', {
+                      p_batch_id: item.batch_id,
+                      p_quantity: qty
+                    });
+
+                    if (rpcError) {
+                      console.error('Error incrementing batch quantity:', rpcError);
+                    } else {
+                      console.log(`✅ Incremented batch ${item.batch_id} by ${qty}`);
+                    }
+
+                    // Create stock movement record
+                    await supabase.from('stock_movements').insert({
+                      product_id: item.product_id,
+                      batch_id: item.batch_id,
+                      quantity: qty,
+                      movement_type: 'IN',
+                      reference_type: 'REFUND',
+                      reference_id: refund_metadata.refund_id,
+                      notes: `Yoco refund - stock restored`
+                    });
+                  }
+                }
+              }
+            }
+          } catch (stockError) {
+            console.error('Error restoring stock for Yoco refund:', stockError);
+          }
+        }
+
+        // Record financial transaction reversal
+        if (refund?.orders?.id) {
+          try {
+            const { data: originalTx } = await supabase
+              .from('financial_transactions')
+              .select('*')
+              .eq('order_id', refund.orders.id)
+              .eq('transaction_type', 'sale')
+              .single();
+
+            if (originalTx) {
+              const refundAmount = event.payload.amount / 100; // Convert from cents
+              await supabase.from('financial_transactions').insert({
+                order_id: refund.orders.id,
+                transaction_type: 'refund',
+                amount: -refundAmount,
+                cost: -(originalTx.cost * (refundAmount / originalTx.amount)),
+                profit: -(originalTx.profit * (refundAmount / originalTx.amount)),
+                payment_method: 'PAYMENT_LINK',
+                notes: 'Yoco refund completed'
+              });
+
+              console.log(`✅ Recorded financial reversal for Yoco refund ${refund_metadata.refund_id}`);
+            }
+          } catch (finError) {
+            console.error('Failed to record financial reversal:', finError);
+          }
+        }
 
         console.log(`Refund completed: ${refund_metadata.refund_id}`);
       }

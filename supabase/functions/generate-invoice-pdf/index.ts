@@ -198,7 +198,7 @@ serve(async (req) => {
     yPos = doc.internal.pageSize.getHeight() - 30;
     doc.setFontSize(9);
     doc.setFont('helvetica', 'italic');
-    doc.text('Thank you for your business!', pageWidth / 2, yPos, { align: 'center' });
+    doc.text('Thank you for your business! ', pageWidth / 2, yPos, { align: 'center' });
     yPos += 5;
     doc.text('For inquiries, contact us at info@puremycelium.co.za', pageWidth / 2, yPos, { align: 'center' });
 

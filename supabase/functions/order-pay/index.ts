@@ -98,24 +98,29 @@ serve(async (req) => {
 
       // Decrement stock for all order items
       for (const item of order.order_items) {
-        // Update batch quantity if batch_id specified
-        if (item.batch_id) {
+        const qty = Number(item.quantity);
+
+        if (item.batch_id && Number.isFinite(qty) && qty > 0) {
           const { error: batchError } = await supabase.rpc('decrement_batch_quantity', {
             p_batch_id: item.batch_id,
-            p_quantity: item.quantity
+            p_quantity: qty
           });
 
           if (batchError) {
             console.error('Error decrementing batch:', batchError);
+          } else {
+            console.log(`✅ Decremented batch ${item.batch_id} by ${qty}`);
           }
+        } else if (!item.batch_id) {
+          console.warn(`Order item ${item.product_id} has no batch_id; stock not decremented`);
         }
 
-        // Create stock movement (OUT)
+        // Create stock movement (OUT) with positive quantity
         await supabase.from('stock_movements').insert({
           product_id: item.product_id,
           batch_id: item.batch_id,
           movement_type: 'OUT',
-          quantity: -Math.abs(item.quantity), // Negative for OUT movements
+          quantity: qty,
           reference_type: 'ORDER',
           reference_id: order_id,
           notes: `Cash payment for order ${order.order_number}`,
@@ -123,7 +128,43 @@ serve(async (req) => {
         });
       }
 
-      // Generate invoice
+      // Record financial transaction
+      try {
+        // Get batch costs for profit calculation
+        const { data: orderItemsWithCosts } = await supabase
+          .from('order_items')
+          .select(`
+            quantity,
+            unit_price,
+            batch_id,
+            product_batches!inner(cost_per_unit)
+          `)
+          .eq('order_id', order_id);
+
+        const totalCost = orderItemsWithCosts?.reduce((sum: number, item: any) => {
+          const costPerUnit = item.product_batches?.cost_per_unit || 0;
+          return sum + (Number(item.quantity) * Number(costPerUnit));
+        }, 0) || 0;
+
+        const profit = Number(amount) - totalCost;
+
+        await supabase.from('financial_transactions').insert({
+          order_id,
+          transaction_type: 'sale',
+          amount: Number(amount),
+          cost: totalCost,
+          profit: profit,
+          payment_method: payment_method,
+          notes: `Sale completed via ${payment_method}`
+        });
+
+        console.log(`✅ Recorded financial transaction: Revenue ${amount}, Cost ${totalCost}, Profit ${profit}`);
+      } catch (finError) {
+        console.error('Failed to record financial transaction:', finError);
+        // Don't fail the payment, just log the error
+      }
+
+      // Generate invoice (paid for cash/terminal)
       const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
       const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
 
@@ -136,7 +177,7 @@ serve(async (req) => {
           total_amount: order.total_amount,
           tax_amount: order.tax_amount,
           paid_amount: amount,
-          status: 'paid',
+          status: 'paid', // Cash/terminal payments are immediately paid
           created_by: user.id
         })
         .select()
@@ -145,18 +186,15 @@ serve(async (req) => {
       if (invoiceError) {
         console.error('Error creating invoice:', invoiceError);
       } else {
-        // Trigger PDF generation
+        // Trigger PDF generation & sending
         try {
-          const pdfResponse = await supabase.functions.invoke('generate-invoice-pdf', {
+          await supabase.functions.invoke('generate-invoice-pdf', {
             body: { invoice_id: invoice.id }
           });
-          console.log('PDF generation triggered:', pdfResponse);
 
-          // Trigger invoice delivery
-          const sendResponse = await supabase.functions.invoke('send-invoice', {
+          await supabase.functions.invoke('send-invoice', {
             body: { invoice_id: invoice.id }
           });
-          console.log('Invoice delivery triggered:', sendResponse);
         } catch (invoiceProcessError) {
           console.error('Error processing invoice PDF/delivery:', invoiceProcessError);
         }
@@ -186,7 +224,7 @@ serve(async (req) => {
       // Create Yoco checkout
       const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://yxjygrsmxrsmdzubzpsj.lovable.app';
       const checkoutPayload = {
-        amount: Math.round(amount * 100), // Convert to cents
+        amount: Math.round(Number(amount) * 100), // Convert to cents
         currency: 'ZAR',
         successUrl: metadata?.successUrl || `${frontendUrl}/payment/success`,
         cancelUrl: metadata?.cancelUrl || `${frontendUrl}/payment/cancel`,

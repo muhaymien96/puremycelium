@@ -124,6 +124,28 @@ const NewSale = () => {
     }
   }, [cartItems, customerId]);
 
+  // Real-time check: remove inactive products from cart
+  useEffect(() => {
+    if (products && cartItems.length > 0) {
+      const inactiveItems = cartItems.filter(item => {
+        const product = products.find(p => p.id === item.id);
+        return !product || product.is_active === false;
+      });
+
+      if (inactiveItems.length > 0) {
+        const names = inactiveItems.map(i => i.name).join(', ');
+        toast.warning(
+          `${inactiveItems.length} product(s) removed from cart: ${names}`,
+          { description: 'These products are no longer available' }
+        );
+        setCartItems(prev => prev.filter(item => {
+          const product = products.find(p => p.id === item.id);
+          return product && product.is_active !== false;
+        }));
+      }
+    }
+  }, [products, cartItems]);
+
   const addToCart = (product: any) => {
     const existing = cartItems.find(item => item.id === product.id);
     if (existing) {

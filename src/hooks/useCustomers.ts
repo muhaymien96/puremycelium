@@ -121,3 +121,32 @@ export const useDeleteCustomer = () => {
     },
   });
 };
+
+export const useUpdateCustomer = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ customerId, updates }: { customerId: string; updates: Partial<Customer> }) => {
+      const { data, error } = await supabase
+        .from('customers')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', customerId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['customer'] });
+      toast.success('Customer updated successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update customer');
+    },
+  });
+};

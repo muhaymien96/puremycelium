@@ -4,12 +4,23 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Clock } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { RefreshCw, Clock, XCircle } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RefundModal } from '@/components/RefundModal';
 import { OrderStatusUpdate } from '@/components/OrderStatusUpdate';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface OrderDetailModalProps {
   orderId: string;
@@ -19,6 +30,8 @@ interface OrderDetailModalProps {
 
 export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalProps) {
   const [showRefundModal, setShowRefundModal] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const queryClient = useQueryClient();
 
   const { data: order, isLoading, refetch } = useQuery({
     queryKey: ['order-detail', orderId],
@@ -100,7 +113,55 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
     0
   ) || 0;
 
-  const canRefund = order?.status !== 'cancelled' && order?.status !== 'refunded' && totalRefunded < Number(order?.total_amount || 0);
+  const hasCompletedPayment = order?.payments?.some(
+    (payment: any) => payment.payment_status === 'completed'
+  );
+
+  // Refund: Only show after payment completed (post-payment action with money return)
+  const canRefund = hasCompletedPayment &&
+                   order?.status !== 'cancelled' && 
+                   order?.status !== 'refunded' && 
+                   totalRefunded < Number(order?.total_amount || 0);
+
+  // Cancel: Only show before payment completed (pre-payment action, no money involved)
+  const canCancel = (order?.status === 'pending' || order?.status === 'confirmed') &&
+                   !hasCompletedPayment;
+
+  const cancelOrderMutation = useMutation({
+    mutationFn: async () => {
+      const { error: statusError } = await supabase
+        .from('orders')
+        .update({ status: 'cancelled' })
+        .eq('id', orderId);
+
+      if (statusError) throw statusError;
+
+      // Add to status history
+      const { error: historyError } = await supabase
+        .from('order_status_history')
+        .insert({
+          order_id: orderId,
+          old_status: order?.status,
+          new_status: 'cancelled',
+          notes: 'Order cancelled by user',
+        });
+
+      if (historyError) throw historyError;
+    },
+    onSuccess: () => {
+      toast.success('Order cancelled successfully');
+      queryClient.invalidateQueries({ queryKey: ['order-detail', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+      refetch();
+      setShowCancelDialog(false);
+    },
+    onError: (error) => {
+      console.error('Error cancelling order:', error);
+      toast.error('Failed to cancel order');
+    },
+  });
 
   return (
     <>
@@ -267,16 +328,28 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
                 )}
 
                 {/* Actions */}
-                {canRefund && (
-                  <Button
-                    onClick={() => setShowRefundModal(true)}
-                    variant="destructive"
-                    className="w-full"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Process Refund
-                  </Button>
-                )}
+                <div className="space-y-2">
+                  {canRefund && (
+                    <Button
+                      onClick={() => setShowRefundModal(true)}
+                      variant="destructive"
+                      className="w-full"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Process Refund
+                    </Button>
+                  )}
+                  {canCancel && (
+                    <Button
+                      onClick={() => setShowCancelDialog(true)}
+                      variant="outline"
+                      className="w-full border-red-500 text-red-600 hover:bg-red-50"
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Cancel Order
+                    </Button>
+                  )}
+                </div>
               </TabsContent>
 
               <TabsContent value="status" className="space-y-4 mt-4">
@@ -352,6 +425,29 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
           onClose={() => setShowRefundModal(false)}
         />
       )}
+
+      <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Order</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel this order? This action cannot be undone.
+              <span className="block mt-2 text-muted-foreground">
+                No payments have been processed for this order, so no refund is necessary.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No, keep order</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => cancelOrderMutation.mutate()}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Yes, cancel order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

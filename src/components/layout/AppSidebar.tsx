@@ -1,4 +1,4 @@
-import { Home, Plus, ShoppingCart, Package, Users, Receipt, BarChart3, LogOut } from 'lucide-react';
+import { Home, Plus, ShoppingCart, Package, Users, Receipt, BarChart3, Shield, LogOut } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { NavLink } from '@/components/NavLink';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,7 +32,7 @@ export function AppSidebar() {
   const { open } = useSidebar();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -66,6 +66,17 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+              
+              {isAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={location.pathname === '/admin'}>
+                    <NavLink to="/admin" className="flex items-center gap-3">
+                      <Shield className="h-4 w-4" />
+                      <span>Admin</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

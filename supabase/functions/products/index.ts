@@ -5,6 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.86.0';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
 };
 
 serve(async (req) => {
@@ -31,7 +32,7 @@ serve(async (req) => {
     }
 
     if (req.method === 'GET') {
-      // List products with current stock levels
+      // List products with current stock levels (ACTIVE ONLY)
       const { data: products, error: productsError } = await supabase
         .from('products')
         .select(`
@@ -44,6 +45,7 @@ serve(async (req) => {
             expiry_date
           )
         `)
+        .eq('is_active', true)
         .order('created_at', { ascending: false });
 
       if (productsError) {
@@ -112,6 +114,42 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ product }),
         { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (req.method === 'PUT') {
+      // Update product
+      const body = await req.json();
+      const { productId, ...updates } = body;
+      if (!productId) {
+        return new Response(
+          JSON.stringify({ error: 'Missing productId' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      // Only allow certain fields to be updated
+      const allowedFields = ['name', 'category', 'unit_price', 'description', 'sku', 'unit_of_measure'];
+      const updateData: Record<string, any> = {};
+      for (const key of allowedFields) {
+        if (updates[key] !== undefined) updateData[key] = updates[key];
+      }
+      updateData.updated_at = new Date().toISOString();
+      const { data: updated, error: updateError } = await supabase
+        .from('products')
+        .update(updateData)
+        .eq('id', productId)
+        .select()
+        .single();
+      if (updateError) {
+        console.error('Error updating product:', updateError);
+        return new Response(
+          JSON.stringify({ error: updateError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      return new Response(
+        JSON.stringify({ product: updated }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
