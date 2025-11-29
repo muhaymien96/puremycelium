@@ -14,3 +14,18 @@ verify_jwt = true
 
 [functions.invoices]
 verify_jwt = true
+
+[functions.orders]
+verify_jwt = true
+
+[functions.order-pay]
+verify_jwt = true
+
+[functions.order-refund]
+verify_jwt = true
+
+[functions.products]
+verify_jwt = true
+
+[functions.product-batches]
+verify_jwt = true

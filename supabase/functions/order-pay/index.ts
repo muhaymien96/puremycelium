@@ -43,10 +43,10 @@ serve(async (req) => {
       );
     }
 
-    // Verify order exists and get details
+    // Verify order exists and get details with batch info
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('*, order_items(product_id, batch_id, quantity)')
+      .select('*, order_items(product_id, batch_id, quantity, unit_price, product_batches(cost_per_unit))')
       .eq('id', order_id)
       .single();
 
@@ -97,10 +97,12 @@ serve(async (req) => {
       }
 
       // Decrement stock for all order items
+      let totalCost = 0;
       for (const item of order.order_items) {
         const qty = Number(item.quantity);
 
         if (item.batch_id && Number.isFinite(qty) && qty > 0) {
+          // Use RPC function for atomic decrement
           const { error: batchError } = await supabase.rpc('decrement_batch_quantity', {
             p_batch_id: item.batch_id,
             p_quantity: qty
@@ -111,8 +113,12 @@ serve(async (req) => {
           } else {
             console.log(`✅ Decremented batch ${item.batch_id} by ${qty}`);
           }
+
+          // Calculate cost from batch
+          const costPerUnit = item.product_batches?.cost_per_unit || 0;
+          totalCost += qty * Number(costPerUnit);
         } else if (!item.batch_id) {
-          console.warn(`Order item ${item.product_id} has no batch_id; stock not decremented`);
+          console.warn(`Order item for product ${item.product_id} has no batch_id; stock not decremented`);
         }
 
         // Create stock movement (OUT) with positive quantity
@@ -123,29 +129,13 @@ serve(async (req) => {
           quantity: qty,
           reference_type: 'ORDER',
           reference_id: order_id,
-          notes: `Cash payment for order ${order.order_number}`,
+          notes: `${payment_method} payment for order ${order.order_number}`,
           created_by: user.id
         });
       }
 
       // Record financial transaction
       try {
-        // Get batch costs for profit calculation
-        const { data: orderItemsWithCosts } = await supabase
-          .from('order_items')
-          .select(`
-            quantity,
-            unit_price,
-            batch_id,
-            product_batches!inner(cost_per_unit)
-          `)
-          .eq('order_id', order_id);
-
-        const totalCost = orderItemsWithCosts?.reduce((sum: number, item: any) => {
-          const costPerUnit = item.product_batches?.cost_per_unit || 0;
-          return sum + (Number(item.quantity) * Number(costPerUnit));
-        }, 0) || 0;
-
         const profit = Number(amount) - totalCost;
 
         await supabase.from('financial_transactions').insert({
@@ -177,7 +167,7 @@ serve(async (req) => {
           total_amount: order.total_amount,
           tax_amount: order.tax_amount,
           paid_amount: amount,
-          status: 'paid', // Cash/terminal payments are immediately paid
+          status: 'paid',
           created_by: user.id
         })
         .select()
@@ -200,13 +190,13 @@ serve(async (req) => {
         }
       }
 
-      console.log(`CASH payment processed for order ${order_id}`);
+      console.log(`✅ ${payment_method} payment processed for order ${order_id}`);
       return new Response(
         JSON.stringify({ 
           success: true,
           payment,
           invoice,
-          message: 'Cash payment processed successfully'
+          message: `${payment_method} payment processed successfully`
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
@@ -226,9 +216,9 @@ serve(async (req) => {
       const checkoutPayload = {
         amount: Math.round(Number(amount) * 100), // Convert to cents
         currency: 'ZAR',
-        successUrl: metadata?.successUrl || `${frontendUrl}/payment/success`,
-        cancelUrl: metadata?.cancelUrl || `${frontendUrl}/payment/cancel`,
-        failureUrl: metadata?.failureUrl || `${frontendUrl}/payment/failure`,
+        successUrl: metadata?.successUrl || `${frontendUrl}/payment/success?orderId=${order_id}`,
+        cancelUrl: metadata?.cancelUrl || `${frontendUrl}/payment/cancel?orderId=${order_id}`,
+        failureUrl: metadata?.failureUrl || `${frontendUrl}/payment/failure?orderId=${order_id}`,
         metadata: {
           order_id,
           order_number: order.order_number,
@@ -267,7 +257,7 @@ serve(async (req) => {
           amount,
           payment_method,
           payment_status: 'pending',
-          checkout_id: yocoData.id, // Store checkout ID
+          checkout_id: yocoData.id,
           created_by: user.id
         })
         .select()
@@ -277,7 +267,7 @@ serve(async (req) => {
         console.error('Error creating payment record:', paymentError);
       }
 
-      console.log(`Yoco checkout created for order ${order_id}: ${yocoData.redirectUrl}`);
+      console.log(`✅ Yoco checkout created for order ${order_id}: ${yocoData.redirectUrl}`);
       return new Response(
         JSON.stringify({ 
           success: true,

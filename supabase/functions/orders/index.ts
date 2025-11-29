@@ -89,23 +89,82 @@ serve(async (req) => {
         );
       }
 
-      // Create order items
-      const orderItems = items.map(item => ({
-        order_id: order.id,
-        product_id: item.product_id,
-        batch_id: item.batch_id || null,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        subtotal: Number(item.quantity) * Number(item.unit_price)
-      }));
+      // FIFO Batch Allocation - allocate batches to each order item
+      const orderItems: any[] = [];
+      const allocationWarnings: string[] = [];
 
+      for (const item of items) {
+        const requestedQty = Number(item.quantity);
+        
+        // Get available batches for this product, ordered by expiry date (FIFO - First Expiry First Out)
+        const { data: batches, error: batchError } = await supabase
+          .from('product_batches')
+          .select('id, quantity, expiry_date, cost_per_unit')
+          .eq('product_id', item.product_id)
+          .gt('quantity', 0)
+          .order('expiry_date', { ascending: true, nullsFirst: false })
+          .order('created_at', { ascending: true });
+
+        if (batchError) {
+          console.error('Error fetching batches for product:', item.product_id, batchError);
+        }
+
+        let remainingQty = requestedQty;
+        const allocations: { batch_id: string; quantity: number; cost_per_unit: number | null }[] = [];
+
+        // Allocate from available batches
+        for (const batch of (batches || [])) {
+          if (remainingQty <= 0) break;
+          
+          const batchQty = Number(batch.quantity);
+          const allocateQty = Math.min(remainingQty, batchQty);
+          
+          allocations.push({
+            batch_id: batch.id,
+            quantity: allocateQty,
+            cost_per_unit: batch.cost_per_unit
+          });
+          
+          remainingQty -= allocateQty;
+          console.log(`Allocated ${allocateQty} units from batch ${batch.id} for product ${item.product_id}`);
+        }
+
+        // Handle case where we couldn't allocate all requested quantity
+        if (remainingQty > 0) {
+          const warningMsg = `Insufficient stock for product ${item.product_id}: requested ${requestedQty}, allocated ${requestedQty - remainingQty}`;
+          console.warn(warningMsg);
+          allocationWarnings.push(warningMsg);
+          
+          // Still create order item without batch (will be tracked but stock won't decrement)
+          if (allocations.length === 0) {
+            allocations.push({
+              batch_id: null as any,
+              quantity: requestedQty,
+              cost_per_unit: null
+            });
+          }
+        }
+
+        // Create order items for each allocation
+        for (const alloc of allocations) {
+          orderItems.push({
+            order_id: order.id,
+            product_id: item.product_id,
+            batch_id: alloc.batch_id,
+            quantity: alloc.quantity,
+            unit_price: item.unit_price,
+            subtotal: Number(alloc.quantity) * Number(item.unit_price)
+          });
+        }
+      }
+
+      // Insert all order items
       const { error: itemsError } = await supabase
         .from('order_items')
         .insert(orderItems);
 
       if (itemsError) {
         console.error('Error creating order items:', itemsError);
-        // Order was created but items failed - return partial success
         return new Response(
           JSON.stringify({ 
             warning: 'Order created but items insertion failed',
@@ -116,9 +175,15 @@ serve(async (req) => {
         );
       }
 
-      console.log(`Created order ${order.id} with ${items.length} items`);
+      console.log(`✅ Created order ${order.id} with ${orderItems.length} items (from ${items.length} line items)`);
+      
+      const response: any = { order };
+      if (allocationWarnings.length > 0) {
+        response.warnings = allocationWarnings;
+      }
+
       return new Response(
-        JSON.stringify({ order }),
+        JSON.stringify(response),
         { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
