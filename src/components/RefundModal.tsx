@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useProcessRefund } from '@/hooks/useOrders';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 interface RefundModalProps {
@@ -36,7 +37,7 @@ export function RefundModal({ order, isOpen, onClose }: RefundModalProps) {
   const isYocoPayment = payment && (payment.payment_method === 'YOKO_WEBPOS' || payment.payment_method === 'PAYMENT_LINK');
   const hasCheckoutId = payment?.checkout_id;
 
-  const queryClient = processRefund.options?.queryClient || undefined;
+  const queryClient = useQueryClient();
   const handleSubmit = async () => {
     if (Number(amount) <= 0 || Number(amount) > maxRefundAmount) {
       toast.error(`Refund amount must be between R0.01 and R${maxRefundAmount.toFixed(2)}`);
