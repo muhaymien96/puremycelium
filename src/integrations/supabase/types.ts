@@ -73,6 +73,50 @@ export type Database = {
           },
         ]
       }
+      financial_transactions: {
+        Row: {
+          amount: number
+          cost: number | null
+          created_at: string | null
+          id: string
+          notes: string | null
+          order_id: string
+          payment_method: string | null
+          profit: number
+          transaction_type: string
+        }
+        Insert: {
+          amount: number
+          cost?: number | null
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          order_id: string
+          payment_method?: string | null
+          profit: number
+          transaction_type: string
+        }
+        Update: {
+          amount?: number
+          cost?: number | null
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          order_id?: string
+          payment_method?: string | null
+          profit?: number
+          transaction_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_transactions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoices: {
         Row: {
           created_at: string | null
@@ -462,6 +506,7 @@ export type Database = {
       product_batches: {
         Row: {
           batch_number: string
+          cost_per_unit: number | null
           created_at: string | null
           expiry_date: string | null
           id: string
@@ -469,10 +514,12 @@ export type Database = {
           product_id: string | null
           production_date: string
           quantity: number
+          total_cost: number | null
           updated_at: string | null
         }
         Insert: {
           batch_number: string
+          cost_per_unit?: number | null
           created_at?: string | null
           expiry_date?: string | null
           id?: string
@@ -480,10 +527,12 @@ export type Database = {
           product_id?: string | null
           production_date: string
           quantity: number
+          total_cost?: number | null
           updated_at?: string | null
         }
         Update: {
           batch_number?: string
+          cost_per_unit?: number | null
           created_at?: string | null
           expiry_date?: string | null
           id?: string
@@ -491,6 +540,7 @@ export type Database = {
           product_id?: string | null
           production_date?: string
           quantity?: number
+          total_cost?: number | null
           updated_at?: string | null
         }
         Relationships: [
@@ -506,7 +556,11 @@ export type Database = {
       products: {
         Row: {
           category: Database["public"]["Enums"]["product_category"]
+          cost_price: number | null
           created_at: string | null
+          deactivated_at: string | null
+          deactivated_by: string | null
+          deactivated_reason: string | null
           description: string | null
           id: string
           is_active: boolean | null
@@ -518,7 +572,11 @@ export type Database = {
         }
         Insert: {
           category: Database["public"]["Enums"]["product_category"]
+          cost_price?: number | null
           created_at?: string | null
+          deactivated_at?: string | null
+          deactivated_by?: string | null
+          deactivated_reason?: string | null
           description?: string | null
           id?: string
           is_active?: boolean | null
@@ -530,7 +588,11 @@ export type Database = {
         }
         Update: {
           category?: Database["public"]["Enums"]["product_category"]
+          cost_price?: number | null
           created_at?: string | null
+          deactivated_at?: string | null
+          deactivated_by?: string | null
+          deactivated_reason?: string | null
           description?: string | null
           id?: string
           is_active?: boolean | null
@@ -540,7 +602,15 @@ export type Database = {
           unit_price?: number
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "products_deactivated_by_fkey"
+            columns: ["deactivated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -733,6 +803,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      decrement_batch_quantity:
+        | {
+            Args: { p_batch_id: string; p_quantity: number }
+            Returns: undefined
+          }
+        | {
+            Args: { p_batch_id: string; p_quantity: number }
+            Returns: undefined
+          }
       generate_invoice_number: { Args: never; Returns: string }
       get_user_roles: {
         Args: { _user_id: string }
@@ -745,6 +824,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_batch_quantity:
+        | {
+            Args: { p_batch_id: string; p_quantity: number }
+            Returns: undefined
+          }
+        | {
+            Args: { p_batch_id: string; p_quantity: number }
+            Returns: undefined
+          }
     }
     Enums: {
       app_role: "admin" | "user"

@@ -95,10 +95,10 @@ serve(async (req) => {
         );
       }
 
-      // Get order details
+      // Get order details with batch cost info
       const { data: order, error: orderError } = await supabase
         .from('orders')
-        .select('*, order_items(product_id, batch_id, quantity)')
+        .select('*, order_items(product_id, batch_id, quantity, unit_price, product_batches(cost_per_unit))')
         .eq('id', order_id)
         .single();
 
@@ -121,12 +121,13 @@ serve(async (req) => {
         .from('payments')
         .update({ 
           payment_status: 'completed',
-          provider_payment_id: event.payload.id // Store actual payment ID from webhook
+          provider_payment_id: event.payload.id
         })
         .eq('order_id', order_id)
         .eq('payment_status', 'pending');
 
       // Decrement stock for all order items
+      let totalCost = 0;
       for (const item of order.order_items) {
         const quantity = Number(item.quantity);
 
@@ -138,7 +139,7 @@ serve(async (req) => {
           // Update batch quantity using RPC function for atomic update
           const { error: batchError } = await supabase.rpc('decrement_batch_quantity', {
             p_batch_id: item.batch_id,
-            p_quantity: quantity, // ensure numeric type
+            p_quantity: quantity,
           });
 
           if (batchError) {
@@ -146,6 +147,10 @@ serve(async (req) => {
           } else {
             console.log(`✅ Decremented batch ${item.batch_id} by ${quantity}`);
           }
+
+          // Calculate cost from batch
+          const costPerUnit = item.product_batches?.cost_per_unit || 0;
+          totalCost += quantity * Number(costPerUnit);
         }
 
         // Create stock movement (OUT) with positive quantity
@@ -153,7 +158,7 @@ serve(async (req) => {
           product_id: item.product_id,
           batch_id: item.batch_id,
           movement_type: 'OUT',
-          quantity: Number(item.quantity), // positive OUT
+          quantity: Number(item.quantity),
           reference_type: 'ORDER',
           reference_id: order_id,
           notes: `Yoco payment for order ${order.order_number}`
@@ -162,21 +167,6 @@ serve(async (req) => {
 
       // Record financial transaction
       try {
-        const { data: orderItemsWithCosts } = await supabase
-          .from('order_items')
-          .select(`
-            quantity,
-            unit_price,
-            batch_id,
-            product_batches!inner(cost_per_unit)
-          `)
-          .eq('order_id', order_id);
-
-        const totalCost = orderItemsWithCosts?.reduce((sum: number, item: any) => {
-          const costPerUnit = item.product_batches?.cost_per_unit || 0;
-          return sum + (Number(item.quantity) * Number(costPerUnit));
-        }, 0) || 0;
-
         const amount = event.payload.amount / 100; // Convert from cents
         const profit = amount - totalCost;
 
@@ -193,7 +183,6 @@ serve(async (req) => {
         console.log(`✅ Recorded financial transaction: Revenue ${amount}, Cost ${totalCost}, Profit ${profit}`);
       } catch (finError) {
         console.error('Failed to record financial transaction:', finError);
-        // Don't fail the webhook, just log the error
       }
 
       // Find existing invoice and update to paid
@@ -216,7 +205,6 @@ serve(async (req) => {
             body: { invoice_id: existingInvoice.id }
           });
 
-          // Send receipt/thank you email
           await supabase.functions.invoke('send-invoice', {
             body: { invoice_id: existingInvoice.id, send_receipt: true }
           });
@@ -224,7 +212,7 @@ serve(async (req) => {
           console.error('Error updating invoice:', error);
         }
       } else {
-        // Fallback: create new invoice if none exists (shouldn't happen normally)
+        // Fallback: create new invoice if none exists
         const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
         const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
 
@@ -254,7 +242,7 @@ serve(async (req) => {
         }
       }
 
-      console.log(`Payment succeeded for order ${order_id}`);
+      console.log(`✅ Payment succeeded for order ${order_id}`);
     }
 
     // Handle refund.succeeded event
@@ -264,7 +252,7 @@ serve(async (req) => {
         // Get refund details
         const { data: refund } = await supabase
           .from('refunds')
-          .select('*, orders(id)')
+          .select('*, orders(id, order_number)')
           .eq('id', refund_metadata.refund_id)
           .single();
 
@@ -281,7 +269,7 @@ serve(async (req) => {
           try {
             const { data: orderItems } = await supabase
               .from('order_items')
-              .select('*')
+              .select('*, product_batches(cost_per_unit)')
               .eq('order_id', refund.orders.id);
 
             if (orderItems && orderItems.length > 0) {
@@ -312,7 +300,7 @@ serve(async (req) => {
                       movement_type: 'IN',
                       reference_type: 'REFUND',
                       reference_id: refund_metadata.refund_id,
-                      notes: `Yoco refund - stock restored`
+                      notes: `Yoco refund - stock restored for order ${refund.orders.order_number}`
                     });
                   }
                 }
@@ -334,15 +322,17 @@ serve(async (req) => {
               .single();
 
             if (originalTx) {
-              const refundAmount = event.payload.amount / 100; // Convert from cents
+              const refundAmount = event.payload.amount / 100;
+              const fraction = refundAmount / originalTx.amount;
+              
               await supabase.from('financial_transactions').insert({
                 order_id: refund.orders.id,
                 transaction_type: 'refund',
                 amount: -refundAmount,
-                cost: -(originalTx.cost * (refundAmount / originalTx.amount)),
-                profit: -(originalTx.profit * (refundAmount / originalTx.amount)),
+                cost: -(originalTx.cost * fraction),
+                profit: -(originalTx.profit * fraction),
                 payment_method: 'PAYMENT_LINK',
-                notes: 'Yoco refund completed'
+                notes: `Yoco refund completed for order ${refund.orders.order_number}`
               });
 
               console.log(`✅ Recorded financial reversal for Yoco refund ${refund_metadata.refund_id}`);
@@ -352,7 +342,7 @@ serve(async (req) => {
           }
         }
 
-        console.log(`Refund completed: ${refund_metadata.refund_id}`);
+        console.log(`✅ Refund completed: ${refund_metadata.refund_id}`);
       }
     }
 

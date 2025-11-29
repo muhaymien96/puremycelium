@@ -1,4 +1,4 @@
-drop extension if exists "pg_net";
+-- drop extension if exists "pg_net";
 
 alter table "public"."product_batches" drop constraint "product_batches_batch_number_key";
 

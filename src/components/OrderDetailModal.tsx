@@ -6,6 +6,8 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RefreshCw, Clock, XCircle } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useProcessPayment } from '@/hooks/useOrders';
+
 import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RefundModal } from '@/components/RefundModal';
@@ -29,6 +31,7 @@ interface OrderDetailModalProps {
 }
 
 export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalProps) {
+  const processPayment = useProcessPayment();
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const queryClient = useQueryClient();
@@ -290,6 +293,35 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
                             <Badge variant="outline" className={`text-xs ${getPaymentStatusColor(payment.payment_status)}`}>
                               {payment.payment_status}
                             </Badge>
+                            {/* Mark as Paid button for pending payments */}
+                            {payment.payment_status === 'pending' && (
+                              <Button
+                                size="sm"
+                                className="ml-2 mt-2"
+                                disabled={processPayment.status === 'pending'}
+                                onClick={() => {
+                                  processPayment.mutate(
+                                    {
+                                      mark_as_paid: true,
+                                      order_id: order.id,
+                                      payment_id: payment.id,
+                                      amount: payment.amount,
+                                    },
+                                    {
+                                      onSuccess: () => {
+                                        toast.success('Payment marked as paid');
+                                        refetch();
+                                      },
+                                      onError: (err: any) => {
+                                        toast.error('Failed to mark as paid');
+                                      },
+                                    }
+                                  );
+                                }}
+                              >
+                                Mark as Paid
+                              </Button>
+                            )}
                           </div>
                         </div>
                       ))}
