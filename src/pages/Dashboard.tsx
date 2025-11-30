@@ -138,9 +138,6 @@ const Dashboard = () => {
           <KPI_Card
             label="Stock Cost Value"
             value={formatCurrency(stats?.stockCostValue)}
-            sub={`Low: ${stats?.lowStockCount || 0} • Exp: ${
-              stats?.expiringBatchesCount || 0
-            }`}
             index={7}
             color={stockColor}
           />
