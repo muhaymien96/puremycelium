@@ -74,7 +74,7 @@ export const useCreateOrder = () => {
   });
 };
 
-// Process a payment
+// Process a payment (CASH / YOKO_WEBPOS / PAYMENT_LINK)
 export const useProcessPayment = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -150,53 +150,146 @@ export const useUpdateOrderStatus = () => {
   });
 };
 
-// Dashboard Stats
+// Dashboard Stats (unified revenue + refunds + inventory snapshot)
 export const useDashboardStats = () =>
   useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
       const [
-        paymentsRes,
+        financialRes,
         customersRes,
-        productsRes,
+        productsCountRes,
+        ordersRes,
         refundsRes,
-        ordersRes
+        inventoryRes,
       ] = await Promise.all([
-        supabase.from("payments")
-          .select("amount, payment_status")
-          .eq("payment_status", "completed"),
-        
-        supabase.from("customers")
-          .select("id", { count: "exact", head: true }),
-        
-        supabase.from("products")
+        supabase
+          .from("financial_transactions")
+          .select("amount, cost, profit, transaction_type"),
+        supabase.from("customers").select("id", { count: "exact", head: true }),
+        supabase
+          .from("products")
           .select("id", { count: "exact", head: true })
           .eq("is_active", true),
-        
-        supabase.from("refunds")
-          .select("amount")
+        supabase.from("orders").select("id"),
+        supabase
+          .from("refunds")
+          .select("amount, created_at")
           .eq("status", "completed"),
-
-        supabase.from("orders")
-          .select("id")
+        supabase
+          .from("products")
+          .select(
+            "id, unit_price, is_active, product_batches(quantity, expiry_date, cost_per_unit)"
+          )
+          .eq("is_active", true),
       ]);
 
-      const totalSales = paymentsRes.data?.reduce(
-        (sum, payment) => sum + Number(payment.amount),
-        0
-      ) || 0;
+      if (financialRes.error) throw financialRes.error;
+      if (customersRes.error) throw customersRes.error;
+      if (productsCountRes.error) throw productsCountRes.error;
+      if (ordersRes.error) throw ordersRes.error;
+      if (refundsRes.error) throw refundsRes.error;
+      if (inventoryRes.error) throw inventoryRes.error;
 
-      const totalRefunds = refundsRes.data?.reduce(
-        (sum, refund) => sum + Number(refund.amount),
-        0
-      ) || 0;
+      const finTx = financialRes.data || [];
+
+      const saleTx = finTx.filter(
+        (tx: any) => tx.transaction_type === "sale"
+      );
+      const refundTx = finTx.filter(
+        (tx: any) => tx.transaction_type === "refund"
+      );
+
+      // Gross sales from transactions of type "sale" only
+      const grossSales =
+        saleTx.reduce(
+          (sum: number, tx: any) => sum + Number(tx.amount || 0),
+          0
+        ) || 0;
+
+      // Refunds from financial_transactions (amounts stored as negative)
+      const refundsFromFin =
+        refundTx.reduce(
+          (sum: number, tx: any) =>
+            sum + Math.abs(Number(tx.amount || 0)),
+          0
+        ) || 0;
+
+      // Fallback refunds from refunds table if no financial refund tx yet
+      const refundsFromTable =
+        refundsRes.data?.reduce(
+          (sum: number, refund: any) => sum + Number(refund.amount || 0),
+          0
+        ) || 0;
+
+      const totalRefunds = refundsFromFin || refundsFromTable;
+      const netRevenue = grossSales - totalRefunds;
+
+      // Net profit from ALL financial tx (sales + refunds)
+      const netProfit =
+        finTx.reduce(
+          (sum: number, tx: any) => sum + Number(tx.profit || 0),
+          0
+        ) || 0;
+
+      const profitMargin =
+        netRevenue > 0 ? (netProfit / netRevenue) * 100 : 0;
+
+      // Inventory snapshot (at cost + simple stock alerts)
+      const inventoryProducts = inventoryRes.data || [];
+      const LOW_STOCK_THRESHOLD = 10;
+      const DAYS_TO_EXPIRY_WARNING = 30;
+      const expiryCutoff = new Date();
+      expiryCutoff.setDate(expiryCutoff.getDate() + DAYS_TO_EXPIRY_WARNING);
+
+      let totalCostValue = 0;
+      let totalRetailValue = 0;
+      let lowStockCount = 0;
+      let expiringBatchesCount = 0;
+
+      (inventoryProducts as any[]).forEach((p) => {
+        const batches = p.product_batches || [];
+        let productStock = 0;
+
+        batches.forEach((b: any) => {
+          const qty = Number(b.quantity) || 0;
+          productStock += qty;
+
+          const costPerUnit =
+            b.cost_per_unit != null && !isNaN(Number(b.cost_per_unit))
+              ? Number(b.cost_per_unit)
+              : Number(p.unit_price) * 0.6; // fallback if no batch cost
+
+          totalCostValue += qty * costPerUnit;
+          totalRetailValue += qty * Number(p.unit_price);
+
+          if (
+            b.expiry_date &&
+            new Date(b.expiry_date) < expiryCutoff &&
+            qty > 0
+          ) {
+            expiringBatchesCount += 1;
+          }
+        });
+
+        if (productStock < LOW_STOCK_THRESHOLD) {
+          lowStockCount += 1;
+        }
+      });
 
       return {
-        totalSales: totalSales - totalRefunds,
+        totalSales: grossSales,
+        netRevenue,
+        totalRefunds,
+        totalProfit: netProfit,
+        profitMargin,
         orderCount: ordersRes.data?.length || 0,
         customerCount: customersRes.count || 0,
-        productCount: productsRes.count || 0,
-        totalRefunds,
+        productCount: productsCountRes.count || 0,
+        stockCostValue: totalCostValue,
+        stockRetailValue: totalRetailValue,
+        lowStockCount,
+        expiringBatchesCount,
       };
     },
   });

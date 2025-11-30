@@ -11,33 +11,105 @@ const Dashboard = () => {
   const { data: stats, isLoading: loadingStats } = useDashboardStats();
   const { data: recentOrders, isLoading: loadingOrders } = useOrders();
 
+  const formatCurrency = (value: number | undefined | null) =>
+    `R ${(Number(value || 0)).toFixed(2)}`;
+
+  const formatPercent = (value: number | undefined | null) =>
+    `${(Number(value || 0)).toFixed(1)}%`;
+
   return (
     <AppLayout>
       <div className="p-4 md:p-6 space-y-6 pb-20 md:pb-6">
+        {/* Header */}
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            Welcome back! Here's an overview of your business.
+            High-level view of sales, refunds, and inventory.
           </p>
         </div>
 
-        {/* Stats Grid */}
+        {/* Primary KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Total Sales */}
+          {/* Net Revenue */}
           <Card>
             <CardContent className="pt-6">
-              <p className="text-xs text-muted-foreground">Total Sales</p>
+              <p className="text-xs text-muted-foreground">Net Revenue</p>
               {loadingStats ? (
                 <Skeleton className="h-10 w-32 mt-2" />
               ) : (
                 <p className="text-3xl font-bold mt-2">
-                  R {(stats?.totalSales || 0).toFixed(2)}
+                  {formatCurrency(stats?.netRevenue)}
+                </p>
+              )}
+              {!loadingStats && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  After completed refunds
                 </p>
               )}
             </CardContent>
           </Card>
 
-          {/* Orders Count */}
+          {/* Gross Sales */}
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-xs text-muted-foreground">Gross Sales</p>
+              {loadingStats ? (
+                <Skeleton className="h-10 w-32 mt-2" />
+              ) : (
+                <p className="text-3xl font-bold mt-2">
+                  {formatCurrency(stats?.totalSales)}
+                </p>
+              )}
+              {!loadingStats && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Before refunds
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Refunds */}
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-xs text-muted-foreground">Refunds</p>
+              {loadingStats ? (
+                <Skeleton className="h-10 w-32 mt-2" />
+              ) : (
+                <p className="text-3xl font-bold mt-2">
+                  {formatCurrency(stats?.totalRefunds)}
+                </p>
+              )}
+              {!loadingStats && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Completed refunds only
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Profit Margin */}
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-xs text-muted-foreground">Profit Margin</p>
+              {loadingStats ? (
+                <Skeleton className="h-10 w-24 mt-2" />
+              ) : (
+                <p className="text-3xl font-bold mt-2">
+                  {formatPercent(stats?.profitMargin)}
+                </p>
+              )}
+              {!loadingStats && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Based on financial transactions
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Secondary KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Orders */}
           <Card>
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Orders</p>
@@ -51,7 +123,7 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Customers Count */}
+          {/* Customers */}
           <Card>
             <CardContent className="pt-6">
               <p className="text-xs text-muted-foreground">Customers</p>
@@ -65,15 +137,35 @@ const Dashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Products Count */}
+          {/* Active Products */}
           <Card>
             <CardContent className="pt-6">
-              <p className="text-xs text-muted-foreground">Products</p>
+              <p className="text-xs text-muted-foreground">Active Products</p>
               {loadingStats ? (
                 <Skeleton className="h-10 w-16 mt-2" />
               ) : (
                 <p className="text-3xl font-bold mt-2">
                   {stats?.productCount || 0}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Stock Value (Cost) */}
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-xs text-muted-foreground">Stock Value (Cost)</p>
+              {loadingStats ? (
+                <Skeleton className="h-10 w-24 mt-2" />
+              ) : (
+                <p className="text-3xl font-bold mt-2">
+                  {formatCurrency(stats?.stockCostValue)}
+                </p>
+              )}
+              {!loadingStats && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Low stock: {stats?.lowStockCount || 0} · Expiring:{" "}
+                  {stats?.expiringBatchesCount || 0}
                 </p>
               )}
             </CardContent>
@@ -91,7 +183,7 @@ const Dashboard = () => {
               </div>
             ) : recentOrders && recentOrders.length > 0 ? (
               <div className="space-y-3">
-                {recentOrders.map((order) => (
+                {recentOrders.map((order: any) => (
                   <div
                     key={order.id}
                     className="border rounded-lg p-3 hover:bg-muted/50 transition-colors cursor-pointer"
@@ -111,7 +203,7 @@ const Dashboard = () => {
                       </div>
                       <div className="text-right">
                         <p className="font-bold">
-                          R {Number(order.total_amount).toFixed(2)}
+                          {formatCurrency(order.total_amount)}
                         </p>
                         <p className="text-xs text-muted-foreground capitalize">
                           {order.status}

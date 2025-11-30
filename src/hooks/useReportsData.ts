@@ -8,7 +8,7 @@ export const useReportsData = () => {
     queryFn: async () => {
       const thirtyDaysAgo = subDays(new Date(), 30);
 
-      // Fetch orders with items for the last 30 days
+      // Orders for category / product / status analytics (30 days)
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select(`
@@ -20,42 +20,94 @@ export const useReportsData = () => {
 
       if (ordersError) throw ordersError;
 
-      // Fetch financial transactions for accurate profit/cost data
-      const { data: financialTx } = await supabase
+      // Financial transactions (for revenue / cost / profit / refunds)
+      const { data: financialTx, error: finError } = await supabase
         .from('financial_transactions')
         .select('*')
         .gte('created_at', thirtyDaysAgo.toISOString());
 
-      // Process sales by date
-      const salesByDate = orders?.reduce((acc: any, order) => {
-        const date = format(new Date(order.created_at), 'MMM dd');
-        if (!acc[date]) {
-          acc[date] = { revenue: 0, cost: 0, profit: 0 };
-        }
-        acc[date].revenue += Number(order.total_amount);
-        return acc;
-      }, {});
+      if (finError) throw finError;
 
-      // Add profit data from financial transactions
-      financialTx?.forEach((tx: any) => {
-        if (tx.transaction_type === 'sale') {
-          const date = format(new Date(tx.created_at), 'MMM dd');
-          if (salesByDate[date]) {
-            salesByDate[date].cost += Number(tx.cost || 0);
-            salesByDate[date].profit += Number(tx.profit || 0);
+      // Refunds table as backup
+      const { data: refunds, error: refundsError } = await supabase
+        .from('refunds')
+        .select('amount, created_at, status')
+        .eq('status', 'completed')
+        .gte('created_at', thirtyDaysAgo.toISOString());
+
+      if (refundsError) throw refundsError;
+
+      // ===== Daily Sales (30 days) - NET of refunds when possible =====
+      const salesByDate: Record<
+        string,
+        {
+          revenue: number;
+          refunds: number;
+          netRevenue: number;
+          cost: number;
+          profit: number;
+        }
+      > = {};
+
+      if (financialTx && financialTx.length > 0) {
+        (financialTx as any[]).forEach((tx) => {
+          const txDate = new Date(tx.created_at);
+          const dateKey = format(txDate, 'MMM dd');
+
+          if (!salesByDate[dateKey]) {
+            salesByDate[dateKey] = {
+              revenue: 0,
+              refunds: 0,
+              netRevenue: 0,
+              cost: 0,
+              profit: 0,
+            };
           }
-        }
-      });
 
-      const dailySales = Object.entries(salesByDate || {}).map(([date, data]: [string, any]) => ({
-        date,
-        amount: data.revenue,
-        cost: data.cost,
-        profit: data.profit,
-      }));
+          if (tx.transaction_type === 'sale') {
+            salesByDate[dateKey].revenue += Number(tx.amount || 0);
+            salesByDate[dateKey].cost += Number(tx.cost || 0);
+            salesByDate[dateKey].profit += Number(tx.profit || 0);
+          } else if (tx.transaction_type === 'refund') {
+            const absAmt = Math.abs(Number(tx.amount || 0));
+            salesByDate[dateKey].refunds += absAmt;
+            salesByDate[dateKey].profit += Number(tx.profit || 0); // usually negative
+          }
+        });
 
-      // Process revenue by category
-      const revenueByCategory = orders?.reduce((acc: any, order) => {
+        // Compute netRevenue per day
+        Object.values(salesByDate).forEach((d) => {
+          d.netRevenue = d.revenue - d.refunds;
+        });
+      } else {
+        // Fallback if no financial_transactions yet: use order totals only (gross)
+        (orders || []).forEach((order: any) => {
+          const dateKey = format(new Date(order.created_at), 'MMM dd');
+          if (!salesByDate[dateKey]) {
+            salesByDate[dateKey] = {
+              revenue: 0,
+              refunds: 0,
+              netRevenue: 0,
+              cost: 0,
+              profit: 0,
+            };
+          }
+          salesByDate[dateKey].revenue += Number(order.total_amount);
+          salesByDate[dateKey].netRevenue = salesByDate[dateKey].revenue;
+        });
+      }
+
+      const dailySales = Object.entries(salesByDate).map(
+        ([date, data]: [string, any]) => ({
+          date,
+          amount: data.netRevenue ?? data.revenue,
+          cost: data.cost || 0,
+          profit: data.profit || 0,
+        })
+      );
+
+      // ===== Revenue by category =====
+      const revenueByCategory = (orders || []).reduce((acc: any, order: any) => {
         order.order_items?.forEach((item: any) => {
           const category = item.products?.category || 'other';
           if (!acc[category]) {
@@ -66,13 +118,15 @@ export const useReportsData = () => {
         return acc;
       }, {});
 
-      const categoryData = Object.entries(revenueByCategory || {}).map(([name, value]) => ({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        value: Number(value),
-      }));
+      const categoryData = Object.entries(revenueByCategory || {}).map(
+        ([name, value]: [string, any]) => ({
+          name: name.charAt(0).toUpperCase() + name.slice(1),
+          value: Number(value),
+        })
+      );
 
-      // Process top products
-      const productSales = orders?.reduce((acc: any, order) => {
+      // ===== Top products by revenue =====
+      const productSales = (orders || []).reduce((acc: any, order: any) => {
         order.order_items?.forEach((item: any) => {
           const productName = item.products?.name || 'Unknown';
           if (!acc[productName]) {
@@ -93,8 +147,8 @@ export const useReportsData = () => {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 5);
 
-      // Process order status distribution
-      const statusDistribution = orders?.reduce((acc: any, order) => {
+      // ===== Order status distribution =====
+      const statusDistribution = (orders || []).reduce((acc: any, order: any) => {
         const status = order.status || 'pending';
         if (!acc[status]) {
           acc[status] = 0;
@@ -103,52 +157,98 @@ export const useReportsData = () => {
         return acc;
       }, {});
 
-      const statusData = Object.entries(statusDistribution || {}).map(([name, value]) => ({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        value: Number(value),
-      }));
+      const statusData = Object.entries(statusDistribution || {}).map(
+        ([name, value]: [string, any]) => ({
+          name: name.charAt(0).toUpperCase() + name.slice(1),
+          value: Number(value),
+        })
+      );
 
-      // Calculate KPIs from financial transactions
-      const thisMonthTx = financialTx?.filter((tx: any) => {
+      // ===== KPIs: This month =====
+      const now = new Date();
+
+      const thisMonthTx = (financialTx || []).filter((tx: any) => {
         const txDate = new Date(tx.created_at);
-        const now = new Date();
         return (
           txDate.getMonth() === now.getMonth() &&
           txDate.getFullYear() === now.getFullYear()
         );
       });
 
-      const saleTx = thisMonthTx?.filter((tx: any) => tx.transaction_type === 'sale') || [];
-      const refundTx = thisMonthTx?.filter((tx: any) => tx.transaction_type === 'refund') || [];
+      const saleTx = thisMonthTx.filter(
+        (tx: any) => tx.transaction_type === 'sale'
+      );
+      const refundTx = thisMonthTx.filter(
+        (tx: any) => tx.transaction_type === 'refund'
+      );
 
-      const totalRevenue = saleTx.reduce((sum: number, tx: any) => sum + Number(tx.amount), 0);
-      const totalCost = saleTx.reduce((sum: number, tx: any) => sum + Number(tx.cost || 0), 0);
-      const totalProfit = saleTx.reduce((sum: number, tx: any) => sum + Number(tx.profit || 0), 0);
-      const totalRefunds = Math.abs(refundTx.reduce((sum: number, tx: any) => sum + Number(tx.amount), 0));
+      const totalRevenue =
+        saleTx.reduce(
+          (sum: number, tx: any) => sum + Number(tx.amount || 0),
+          0
+        ) || 0;
 
-      // Fallback to orders if no financial transactions
-      const thisMonthOrders = orders?.filter((order) => {
-        const orderDate = new Date(order.created_at);
-        const now = new Date();
-        return (
-          orderDate.getMonth() === now.getMonth() &&
-          orderDate.getFullYear() === now.getFullYear()
-        );
-      });
+      const totalCost =
+        saleTx.reduce(
+          (sum: number, tx: any) => sum + Number(tx.cost || 0),
+          0
+        ) || 0;
 
-      const orderBasedRevenue = thisMonthOrders?.reduce((sum, order) => sum + Number(order.total_amount), 0) || 0;
-      const totalOrders = thisMonthOrders?.length || 0;
-      const avgOrderValue = totalOrders > 0 ? (totalRevenue || orderBasedRevenue) / totalOrders : 0;
+      // Net profit from all tx in the month (sales + refunds)
+      const netProfitThisMonth =
+        thisMonthTx.reduce(
+          (sum: number, tx: any) => sum + Number(tx.profit || 0),
+          0
+        ) || 0;
 
-      // Get refunds from refunds table as backup
-      const { data: refunds } = await supabase
-        .from('refunds')
-        .select('amount')
-        .eq('status', 'completed')
-        .gte('created_at', thirtyDaysAgo.toISOString());
+      // Refunds from financial_transactions (preferred)
+      const totalRefundsFromFin =
+        refundTx.reduce(
+          (sum: number, tx: any) =>
+            sum + Math.abs(Number(tx.amount || 0)),
+          0
+        ) || 0;
 
-      const refundsFromTable = refunds?.reduce((sum, refund) => sum + Number(refund.amount), 0) || 0;
-      const finalRefunds = totalRefunds || refundsFromTable;
+      // Fallback: refunds table (this month only) if no financial refund tx exist
+      const refundsThisMonthFromTable =
+        (refunds || [])
+          .filter((r: any) => {
+            const rDate = new Date(r.created_at);
+            return (
+              rDate.getMonth() === now.getMonth() &&
+              rDate.getFullYear() === now.getFullYear()
+            );
+          })
+          .reduce(
+            (sum: number, r: any) => sum + Number(r.amount || 0),
+            0
+          ) || 0;
+
+      const finalRefunds = totalRefundsFromFin || refundsThisMonthFromTable;
+
+      // Fallback to orders if no financial transactions yet
+      const thisMonthOrders =
+        (orders || []).filter((order: any) => {
+          const orderDate = new Date(order.created_at);
+          return (
+            orderDate.getMonth() === now.getMonth() &&
+            orderDate.getFullYear() === now.getFullYear()
+          );
+        }) || [];
+
+      const orderBasedRevenue =
+        thisMonthOrders.reduce(
+          (sum: number, order: any) => sum + Number(order.total_amount),
+          0
+        ) || 0;
+
+      const totalOrders = thisMonthOrders.length || 0;
+      const baseRevenue = totalRevenue || orderBasedRevenue;
+      const netRevenue = baseRevenue - finalRefunds;
+      const avgOrderValue = totalOrders > 0 ? baseRevenue / totalOrders : 0;
+
+      const profitMargin =
+        netRevenue > 0 ? (netProfitThisMonth / netRevenue) * 100 : 0;
 
       return {
         dailySales,
@@ -156,14 +256,14 @@ export const useReportsData = () => {
         topProducts,
         statusData,
         kpis: {
-          totalRevenue: totalRevenue || orderBasedRevenue,
+          totalRevenue: baseRevenue,
           totalOrders,
           avgOrderValue,
           totalRefunds: finalRefunds,
-          netRevenue: (totalRevenue || orderBasedRevenue) - finalRefunds,
+          netRevenue,
           totalCost,
-          totalProfit: totalProfit || ((totalRevenue || orderBasedRevenue) - finalRefunds - totalCost),
-          profitMargin: totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : '0',
+          totalProfit: netProfitThisMonth,
+          profitMargin,
         },
       };
     },
