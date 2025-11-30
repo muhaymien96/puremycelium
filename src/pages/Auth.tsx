@@ -106,8 +106,8 @@ const Auth = () => {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">🍯 PureMycelium</h1>
-          <p className="text-muted-foreground">Honey & Mushroom CRM</p>
+          <h1 className="text-4xl font-bold mb-2">🍯🍄 Mycelia</h1>
+          <p className="text-muted-foreground">Smart CRM for SMEs</p>
         </div>
 
         <Tabs defaultValue="signin" className="w-full">
