@@ -3,7 +3,7 @@ import { useDashboardStats, useOrders } from '@/hooks/useOrders';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { EmptyState } from '@/components/EmptyState';
-import { ShoppingBag } from 'lucide-react';
+import { ShoppingBag, FileText, BarChart2, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
@@ -76,8 +76,35 @@ const Dashboard = () => {
 
   return (
     <AppLayout>
-      <div className="p-4 md:p-6 space-y-6 pb-24">
-        
+      {/* Mobile Quick Navs */}
+      <div className="fixed z-30 left-0 right-0 top-0 md:hidden bg-white border-b border-slate-200 flex justify-around items-center h-14 shadow-sm">
+        <button
+          className="flex flex-col items-center justify-center text-xs text-muted-foreground hover:text-primary focus:text-primary transition px-2"
+          onClick={() => navigate('/invoices')}
+          aria-label="Go to Invoices"
+        >
+          <FileText className="h-5 w-5 mb-0.5" />
+          Invoices
+        </button>
+        <button
+          className="flex flex-col items-center justify-center text-xs text-muted-foreground hover:text-primary focus:text-primary transition px-2"
+          onClick={() => navigate('/reports')}
+          aria-label="Go to Reports"
+        >
+          <BarChart2 className="h-5 w-5 mb-0.5" />
+          Reports
+        </button>
+        <button
+          className="flex flex-col items-center justify-center text-xs text-muted-foreground hover:text-primary focus:text-primary transition px-2"
+          onClick={() => navigate('/customers')}
+          aria-label="Go to Customers"
+        >
+          <Users className="h-5 w-5 mb-0.5" />
+          Customers
+        </button>
+      </div>
+
+      <div className="p-4 md:p-6 space-y-6 pb-24 pt-16 md:pt-0">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 6 }}
