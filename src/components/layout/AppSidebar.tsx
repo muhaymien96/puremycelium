@@ -1,7 +1,18 @@
-import { Home, Plus, ShoppingCart, Package, Users, Receipt, BarChart3, Shield, LogOut } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { NavLink } from '@/components/NavLink';
-import { useAuth } from '@/contexts/AuthContext';
+import {
+  Home,
+  Plus,
+  ShoppingCart,
+  Package,
+  Users,
+  Receipt,
+  BarChart3,
+  Shield,
+  LogOut,
+  UserCircle,
+} from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { NavLink } from "@/components/NavLink";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Sidebar,
   SidebarContent,
@@ -15,17 +26,18 @@ import {
   SidebarFooter,
   SidebarTrigger,
   useSidebar,
-} from '@/components/ui/sidebar';
-import { Button } from '@/components/ui/button';
+} from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
 
 const menuItems = [
-  { title: 'Dashboard', url: '/dashboard', icon: Home },
-  { title: 'New Sale', url: '/sale', icon: Plus },
-  { title: 'Orders', url: '/orders', icon: ShoppingCart },
-  { title: 'Inventory', url: '/inventory', icon: Package },
-  { title: 'Customers', url: '/customers', icon: Users },
-  { title: 'Invoices', url: '/invoices', icon: Receipt },
-  { title: 'Reports', url: '/reports', icon: BarChart3 },
+  { title: "Dashboard", url: "/dashboard", icon: Home },
+  { title: "New Sale", url: "/sale", icon: Plus },
+  { title: "Orders", url: "/orders", icon: ShoppingCart },
+  { title: "Inventory", url: "/inventory", icon: Package },
+  { title: "Customers", url: "/customers", icon: Users },
+  { title: "Invoices", url: "/invoices", icon: Receipt },
+  { title: "Reports", url: "/reports", icon: BarChart3 },
 ];
 
 export function AppSidebar() {
@@ -36,16 +48,23 @@ export function AppSidebar() {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/auth');
+    navigate("/auth");
   };
 
   return (
-    <Sidebar collapsible="icon" className="border-r">
+    <Sidebar collapsible="icon" className="border-r bg-sidebar">
+      {/* Header Branding */}
       <SidebarHeader className="border-b p-4">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">🍯</span>
-          {open && <span className="font-bold text-lg">PureMycelium</span>}
-        </div>
+        <motion.div
+          className="flex items-center gap-2"
+          layout
+          transition={{ duration: 0.25 }}
+        >
+          <span className="text-2xl">🍯🍄</span>
+          {open && (
+            <span className="font-bold text-lg tracking-tight">Mycelia</span>
+          )}
+        </motion.div>
       </SidebarHeader>
 
       <SidebarContent>
@@ -55,24 +74,39 @@ export function AppSidebar() {
             <SidebarMenu>
               {menuItems.map((item) => {
                 const isActive = location.pathname === item.url;
+                const Icon = item.icon;
+
                 return (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      className={`transition-colors duration-200 ${
+                        isActive
+                          ? "bg-primary/10 text-primary shadow-sm"
+                          : "hover:bg-accent"
+                      }`}
+                    >
                       <NavLink to={item.url} className="flex items-center gap-3">
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
+                        <Icon className="h-4 w-4" />
+                        {open && <span>{item.title}</span>}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
               })}
-              
+
+              {/* Admin Row */}
               {isAdmin && (
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={location.pathname === '/admin'}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.pathname === "/admin"}
+                    className="transition-colors duration-200 hover:bg-accent"
+                  >
                     <NavLink to="/admin" className="flex items-center gap-3">
-                      <Shield className="h-4 w-4" />
-                      <span>Admin</span>
+                      <Shield className="h-4 w-4 text-red-500" />
+                      {open && <span className="text-red-600 font-medium">Admin</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -82,26 +116,41 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
+      {/* Footer User Section */}
       <SidebarFooter className="border-t p-4">
-        <div className="space-y-2">
+        <motion.div className="flex items-center gap-3 mb-3" layout>
+          <UserCircle className="h-6 w-6 text-muted-foreground" />
           {open && (
-            <div className="px-2 py-1 text-xs text-muted-foreground truncate">
-              {user?.email}
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-medium truncate">{user?.email}</span>
+              {isAdmin && (
+                <span className="text-[10px] text-primary font-semibold uppercase tracking-wide">
+                  Admin
+                </span>
+              )}
             </div>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSignOut}
-            className="w-full justify-start"
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            {open && <span>Logout</span>}
-          </Button>
-        </div>
+        </motion.div>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleSignOut}
+          className="w-full justify-start transition"
+        >
+          <LogOut className="h-4 w-4 mr-2" />
+          {open && <span>Logout</span>}
+        </Button>
       </SidebarFooter>
-      
-      <SidebarTrigger className="absolute top-4 -right-4" />
+
+      {/* Floating Expand/Collapse Button */}
+      <motion.div
+        layout
+        className="absolute top-4 -right-4"
+        transition={{ duration: 0.2 }}
+      >
+        <SidebarTrigger />
+      </motion.div>
     </Sidebar>
   );
 }
