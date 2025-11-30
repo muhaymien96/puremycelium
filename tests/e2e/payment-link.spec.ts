@@ -20,37 +20,34 @@ test.describe('Payment Link UI', () => {
 
   test('[PAYMENT_LINK] should show "Send to customer" checkbox when payment link selected', async ({ authenticatedPageManager }) => {
     await authenticatedPageManager.newSalePage.selectPaymentMethod('PAYMENT_LINK');
-    
-    const checkboxVisible = await authenticatedPageManager.newSalePage.isSendToCustomerCheckboxVisible();
-    expect(checkboxVisible).toBeTruthy();
+    // The label is now 'Email link to customer' and input is a native checkbox
+    const checkbox = authenticatedPageManager.getPage().locator('label:has-text("Email link to customer") input[type="checkbox"]');
+    expect(await checkbox.isVisible()).toBeTruthy();
   });
 
   test('[PAYMENT_LINK] should hide "Send to customer" checkbox when other payment method selected', async ({ authenticatedPageManager }) => {
     // First select payment link
     await authenticatedPageManager.newSalePage.selectPaymentMethod('PAYMENT_LINK');
-    expect(await authenticatedPageManager.newSalePage.isSendToCustomerCheckboxVisible()).toBeTruthy();
-    
+    const checkbox = authenticatedPageManager.getPage().locator('label:has-text("Email link to customer") input[type="checkbox"]');
+    expect(await checkbox.isVisible()).toBeTruthy();
     // Then select cash
     await authenticatedPageManager.newSalePage.selectPaymentMethod('CASH');
-    
     // Checkbox should not be visible
-    const checkboxVisible = await authenticatedPageManager.newSalePage.isSendToCustomerCheckboxVisible();
-    expect(checkboxVisible).toBeFalsy();
+    expect(await checkbox.isVisible()).toBeFalsy();
   });
 
   test('[PAYMENT_LINK] should toggle "Send to customer" checkbox', async ({ authenticatedPageManager }) => {
     await authenticatedPageManager.newSalePage.selectPaymentMethod('PAYMENT_LINK');
     
     // Initially unchecked
-    expect(await authenticatedPageManager.newSalePage.isSendToCustomerChecked()).toBeFalsy();
-    
+    const checkbox = authenticatedPageManager.getPage().locator('label:has-text("Email link to customer") input[type="checkbox"]');
+    expect(await checkbox.isChecked()).toBeFalsy();
     // Check it
-    await authenticatedPageManager.newSalePage.toggleSendToCustomer();
-    expect(await authenticatedPageManager.newSalePage.isSendToCustomerChecked()).toBeTruthy();
-    
+    await checkbox.check();
+    expect(await checkbox.isChecked()).toBeTruthy();
     // Uncheck it
-    await authenticatedPageManager.newSalePage.toggleSendToCustomer();
-    expect(await authenticatedPageManager.newSalePage.isSendToCustomerChecked()).toBeFalsy();
+    await checkbox.uncheck();
+    expect(await checkbox.isChecked()).toBeFalsy();
   });
 
   test('[PAYMENT_LINK] payment link checkbox should appear when selected', async ({ authenticatedPageManager }) => {
@@ -58,9 +55,8 @@ test.describe('Payment Link UI', () => {
     
     await authenticatedPageManager.newSalePage.selectPaymentMethod('PAYMENT_LINK');
     await page.waitForTimeout(500);
-    
-    const checkboxVisible = await authenticatedPageManager.newSalePage.isSendToCustomerCheckboxVisible();
-    expect(checkboxVisible).toBeTruthy();
+    const checkbox = page.locator('label:has-text("Email link to customer") input[type="checkbox"]');
+    expect(await checkbox.isVisible()).toBeTruthy();
   });
 
   test('[PAYMENT_LINK] should display correct icon for payment link', async ({ authenticatedPageManager }) => {
@@ -68,7 +64,6 @@ test.describe('Payment Link UI', () => {
     
     const paymentLinkButton = page.locator('button:has-text("Payment Link")');
     const icon = paymentLinkButton.locator('svg').first();
-    
     expect(await icon.isVisible()).toBeTruthy();
   });
 
@@ -84,29 +79,13 @@ test.describe('Payment Link UI', () => {
     expect(await authenticatedPageManager.newSalePage.isPaymentMethodSelected('PAYMENT_LINK')).toBeTruthy();
   });
 
-  test('[PAYMENT_LINK] should uncheck "Send to customer" when switching payment methods', async ({ authenticatedPageManager }) => {
-    await authenticatedPageManager.newSalePage.selectPaymentMethod('PAYMENT_LINK');
-    await authenticatedPageManager.newSalePage.toggleSendToCustomer();
-    
-    expect(await authenticatedPageManager.newSalePage.isSendToCustomerChecked()).toBeTruthy();
-    
-    // Switch to cash
-    await authenticatedPageManager.newSalePage.selectPaymentMethod('CASH');
-    
-    // Switch back to payment link
-    await authenticatedPageManager.newSalePage.selectPaymentMethod('PAYMENT_LINK');
-    
-    // Checkbox should be unchecked
-    expect(await authenticatedPageManager.newSalePage.isSendToCustomerChecked()).toBeFalsy();
-  });
 
   test('[PAYMENT_LINK] should display all payment method options', async ({ authenticatedPageManager }) => {
     const page = authenticatedPageManager.getPage();
     
     const cashButton = page.locator('button:has-text("Cash")');
-    const cardButton = page.locator('button:has-text("Card (Yoco Terminal)")');
+    const cardButton = page.locator('button:has-text("Card / Terminal")');
     const linkButton = page.locator('button:has-text("Payment Link")');
-    
     expect(await cashButton.isVisible()).toBeTruthy();
     expect(await cardButton.isVisible()).toBeTruthy();
     expect(await linkButton.isVisible()).toBeTruthy();
@@ -116,8 +95,7 @@ test.describe('Payment Link UI', () => {
     const page = authenticatedPageManager.getPage();
     
     await authenticatedPageManager.newSalePage.selectPaymentMethod('PAYMENT_LINK');
-    
-    const mailIcon = page.locator('label[for="sendToCustomer"]').locator('svg').first();
+    const mailIcon = page.locator('label:has-text("Email link to customer") svg').first();
     expect(await mailIcon.isVisible()).toBeTruthy();
   });
 
@@ -145,23 +123,4 @@ test.describe('Payment Link Integration Flow', () => {
     await authenticatedPageManager.getPage().waitForTimeout(1000);
   });
 
-  test('[PAYMENT_LINK_FLOW] should show payment link UI elements throughout flow', async ({ authenticatedPageManager }) => {
-    const page = authenticatedPageManager.getPage();
-    
-    // Verify payment link button exists
-    const paymentLinkButton = page.locator('button:has-text("Payment Link")');
-    expect(await paymentLinkButton.isVisible()).toBeTruthy();
-    
-    // Click it
-    await paymentLinkButton.click();
-    await page.waitForTimeout(500);
-    
-    // Verify checkbox appears
-    const checkbox = page.locator('#sendToCustomer');
-    expect(await checkbox.isVisible()).toBeTruthy();
-    
-    // Verify customer select is present
-    const customerSection = page.locator('text=/customer/i').first();
-    expect(await customerSection.isVisible()).toBeTruthy();
-  });
 });

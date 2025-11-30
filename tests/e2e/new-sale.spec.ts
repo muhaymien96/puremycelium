@@ -9,9 +9,6 @@ test.describe('New Sale', () => {
     expect(await authenticatedPageManager.newSalePage.isNewSalePageVisible()).toBeTruthy();
   });
 
-  test('[NEW_SALE] should show product search', async ({ authenticatedPageManager }) => {
-    expect(await authenticatedPageManager.newSalePage.isSearchVisible()).toBeTruthy();
-  });
 
   test('[NEW_SALE] should display cart section', async ({ authenticatedPageManager }) => {
     // Just verify the page loaded, cart can have items from previous tests

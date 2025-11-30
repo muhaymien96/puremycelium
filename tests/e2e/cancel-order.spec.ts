@@ -48,45 +48,37 @@ test.describe('Cancel Order Functionality', () => {
     }
   });
 
-  test('[CANCEL_ORDER] should show cancel button for confirmed orders', async ({ authenticatedPageManager }) => {
+  test('[CANCEL_ORDER] should show cancel button for confirmed orders with no completed payment', async ({ authenticatedPageManager }) => {
     const page = authenticatedPageManager.getPage();
     const ordersPage = authenticatedPageManager.ordersPage;
     
     const hasOrders = await ordersPage.hasOrders();
-    
     if (!hasOrders) {
       test.skip(true, 'No orders available to test');
       return;
     }
-
-    // Try to find a confirmed order
+    // Try to find a confirmed order with no completed payment
     const orderCount = await ordersPage.getOrderCount();
     let foundConfirmedOrder = false;
-
     for (let i = 0; i < Math.min(orderCount, 10); i++) {
       await ordersPage.clickViewButtonByIndex(i);
       await page.getByRole('dialog').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(2000);
-      
       const orderStatus = await ordersPage.getOrderStatusBadgeText();
       const isConfirmed = orderStatus.toLowerCase().includes('confirmed');
-      
-      if (isConfirmed) {
+      const hasCompletedPayment = await ordersPage.hasCompletedPayment();
+      if (isConfirmed && !hasCompletedPayment) {
         foundConfirmedOrder = true;
-        
         // Cancel button should be visible
         const cancelVisible = await ordersPage.isCancelButtonVisible();
         expect(cancelVisible).toBeTruthy();
-        
         break;
       }
-      
       await ordersPage.closeOrderDetailModal();
       await page.waitForTimeout(1000);
     }
-
     if (!foundConfirmedOrder) {
-      test.skip(true, 'No confirmed orders found');
+      test.skip(true, 'No confirmed orders without completed payment found');
     }
   });
 
@@ -137,40 +129,32 @@ test.describe('Cancel Order Functionality', () => {
     const ordersPage = authenticatedPageManager.ordersPage;
     
     const hasOrders = await ordersPage.hasOrders();
-    
     if (!hasOrders) {
       test.skip(true, 'No orders available to test');
       return;
     }
-
     // Try to find a cancelled order
     const orderCount = await ordersPage.getOrderCount();
     let foundCancelledOrder = false;
-
     for (let i = 0; i < Math.min(orderCount, 10); i++) {
       await ordersPage.clickViewButtonByIndex(i);
       await page.getByRole('dialog').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
       await page.waitForTimeout(2000);
-      
       const orderStatus = await ordersPage.getOrderStatusBadgeText();
       const isCancelled = orderStatus.toLowerCase().includes('cancelled');
-      
-      if (isCancelled) {
+      const hasCompletedPayment = await ordersPage.hasCompletedPayment();
+      if (isCancelled || hasCompletedPayment) {
         foundCancelledOrder = true;
-        
         // Cancel button should NOT be visible
         const cancelVisible = await ordersPage.isCancelButtonVisible();
         expect(cancelVisible).toBeFalsy();
-        
         break;
       }
-      
       await ordersPage.closeOrderDetailModal();
       await page.waitForTimeout(1000);
     }
-
     if (!foundCancelledOrder) {
-      test.skip(true, 'No cancelled orders found');
+      test.skip(true, 'No cancelled or paid orders found');
     }
   });
 
