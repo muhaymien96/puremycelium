@@ -230,7 +230,7 @@ serve(async (req) => {
     // Company Name (always show, below logo or as main header)
     doc.setFontSize(logoAdded ? 18 : 24);
     doc.setFont('helvetica', 'bold');
-    doc.text(businessSettings?.business_name || 'Mycelia', pageWidth / 2, yPos, { align: 'center' });
+    doc.text(businessSettings?.business_name || 'Revono', pageWidth / 2, yPos, { align: 'center' });
     yPos += 10;
 
     // Business details subtitle

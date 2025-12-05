@@ -29,8 +29,7 @@ export function MobileHeader() {
       className="md:hidden fixed top-0 left-0 right-0 bg-card/95 backdrop-blur-sm border-b z-40 px-4 h-14 flex items-center justify-between shadow-sm"
     >
       <div className="flex items-center gap-2">
-        <span className="text-2xl">🍯🍄</span>
-        <span className="font-bold text-lg tracking-tight">Mycelia</span>
+        <span className="font-bold text-lg tracking-tight">Revono</span>
       </div>
 
       <DropdownMenu>

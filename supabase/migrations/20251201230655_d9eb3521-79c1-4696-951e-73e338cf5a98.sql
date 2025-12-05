@@ -80,8 +80,8 @@ INSERT INTO public.business_settings (
   invoice_footer_text,
   primary_color
 ) VALUES (
-  'PureMycelium',
-  'info@puremycelium.co.za',
+  'Revono',
+  'info@revono.co.za',
   'Thank you for your business!',
   '#ea384c'
 ) ON CONFLICT DO NOTHING;

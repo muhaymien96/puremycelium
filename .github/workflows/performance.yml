@@ -29,7 +29,7 @@ on:
 jobs:
   k6-performance:
     runs-on: ubuntu-latest
-    environment: puremycelium
+    environment: revono
     
     steps:
       - name: Checkout code

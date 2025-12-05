@@ -58,7 +58,7 @@ const Index = () => {
     <div className="min-h-screen flex flex-col bg-background">
       {/* Navbar */}
       <nav className="flex items-center justify-between px-8 py-4 border-b bg-white/80 backdrop-blur z-10 sticky top-0">
-        <div className="flex items-center gap-2 text-2xl font-bold cursor-pointer" onClick={() => navigate('/')}>🍯🍄 Mycelia</div>
+        <div className="flex items-center gap-2 text-2xl font-bold cursor-pointer" onClick={() => navigate('/')}>Revono</div>
         <div className="flex gap-6 items-center text-base font-medium">
           <Button variant="ghost" onClick={() => navigate('/auth')}>Login</Button>
           <Button onClick={() => navigate('/auth')} className="ml-2">Sign up</Button>
@@ -105,7 +105,7 @@ const Index = () => {
           <a href="/support" className="hover:text-primary transition">Support</a>
           <a href="/about" className="hover:text-primary transition">About</a>
         </div>
-        <div className="text-xsA\Z">&copy; {new Date().getFullYear()} Mycelia. All rights reserved.</div>
+        <div className="text-xsA\Z">&copy; {new Date().getFullYear()} Revono. All rights reserved.</div>
       </footer>
     </div>
   );

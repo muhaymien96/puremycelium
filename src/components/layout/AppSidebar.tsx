@@ -67,9 +67,8 @@ export function AppSidebar() {
           layout
           transition={{ duration: 0.25 }}
         >
-          <span className="text-2xl">🍯🍄</span>
           {open && (
-            <span className="font-bold text-lg tracking-tight">Mycelia</span>
+            <span className="font-bold text-lg tracking-tight">Revono</span>
           )}
         </motion.div>
       </SidebarHeader>

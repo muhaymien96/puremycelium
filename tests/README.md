@@ -1,4 +1,4 @@
-# PureMycelium E2E Testing
+# Revono E2E Testing
 
 ## Architecture Overview
 
