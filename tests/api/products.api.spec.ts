@@ -3,28 +3,50 @@ import { createClient } from '@supabase/supabase-js';
 
 const PRODUCTS_PATH = '/functions/v1/products';
 
+// Get Supabase URL from available env vars
+const getSupabaseUrl = () => {
+  return process.env.VITE_SUPABASE_URL || 
+         process.env.K6_SUPABASE_URL || 
+         process.env.PLAYWRIGHT_API_BASE_URL || '';
+};
+
+const getSupabaseAnonKey = () => {
+  return process.env.VITE_SUPABASE_ANON_KEY || 
+         process.env.SUPABASE_ANON_KEY || '';
+};
+
 // Basic contract + behavior tests for products edge function
 
 test.describe('Products API', () => {
   test.afterEach(async () => {
-    // Cleanup: Mark test products as inactive
-    const supabase = createClient(
-      process.env.VITE_SUPABASE_URL!,
-      process.env.VITE_SUPABASE_ANON_KEY!
-    );
+    const url = getSupabaseUrl();
+    const key = getSupabaseAnonKey();
     
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase
-        .from('products')
-        .update({ 
-          is_active: false,
-          deactivated_at: new Date().toISOString(),
-          deactivated_reason: 'Automated test cleanup',
-          deactivated_by: user.id
-        })
-        .like('name', 'Test Product%')
-        .eq('is_active', true);
+    // Skip cleanup if env vars not set
+    if (!url || !key) {
+      console.log('Skipping cleanup - Supabase credentials not available');
+      return;
+    }
+    
+    try {
+      // Cleanup: Mark test products as inactive
+      const supabase = createClient(url, key);
+    
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('products')
+          .update({ 
+            is_active: false,
+            deactivated_at: new Date().toISOString(),
+            deactivated_reason: 'Automated test cleanup',
+            deactivated_by: user.id
+          })
+          .like('name', 'Test Product%')
+          .eq('is_active', true);
+      }
+    } catch (error) {
+      console.log('Cleanup failed (non-critical):', error);
     }
   });
 

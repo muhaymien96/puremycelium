@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useGenerateInvoice } from "@/hooks/useGenerateInvoice";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ const Invoices = () => {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<string>("all");
+  const generateInvoiceMutation = useGenerateInvoice();
 
   const { data: invoices, isLoading, refetch } = useQuery({
     queryKey: ['invoices', statusFilter, deliveryStatusFilter],
@@ -44,6 +46,36 @@ const Invoices = () => {
     },
   });
 
+  const handleDownload = async (pdfUrl: string, invoiceNumber: string) => {
+    try {
+      // Extract the file path from the URL
+      const fileName = pdfUrl.split('/').pop();
+      if (!fileName) throw new Error("Invalid PDF URL");
+
+      // Download the file through Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('invoices')
+        .download(fileName);
+
+      if (error) throw error;
+
+      // Create a blob URL and trigger download
+      const url = window.URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${invoiceNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast.success("Invoice downloaded successfully");
+    } catch (error) {
+      console.error('Error downloading invoice:', error);
+      toast.error("Failed to download invoice");
+    }
+  };
+
   const handleResend = async (invoiceId: string) => {
     try {
       const { error } = await supabase.functions.invoke('send-invoice', {
@@ -57,6 +89,15 @@ const Invoices = () => {
     } catch (error) {
       console.error('Error resending invoice:', error);
       toast.error("Failed to resend invoice");
+    }
+  };
+
+  const handleRegenerateInvoice = async (orderId: string) => {
+    try {
+      await generateInvoiceMutation.mutateAsync(orderId);
+      refetch();
+    } catch (error) {
+      console.error('Error regenerating invoice:', error);
     }
   };
 
@@ -188,24 +229,34 @@ const Invoices = () => {
                           <TableCell>
                             <div className="flex gap-2">
                               {invoice.pdf_url && (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => window.open(invoice.pdf_url, '_blank')}
-                                    title="Download PDF"
-                                  >
-                                    <Download className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleResend(invoice.id)}
-                                    title="Resend Invoice"
-                                  >
-                                    <RefreshCw className="h-4 w-4" />
-                                  </Button>
-                                </>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDownload(invoice.pdf_url, invoice.invoice_number)}
+                                  title="Download PDF"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {invoice.pdf_url && invoice.customers?.email && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleResend(invoice.id)}
+                                  title="Resend Invoice"
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {invoice.order_id && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRegenerateInvoice(invoice.order_id)}
+                                  title="Regenerate PDF"
+                                >
+                                  <FileText className="h-4 w-4" />
+                                </Button>
                               )}
                               <Button
                                 variant="ghost"
@@ -226,7 +277,7 @@ const Invoices = () => {
                 {/* Mobile Card List */}
                 <div className="md:hidden p-4 space-y-3">
                   {invoices.map((invoice: any) => (
-                    <Card key={invoice.id} className="cursor-pointer hover:bg-muted/50" onClick={() => invoice.pdf_url && window.open(invoice.pdf_url, '_blank')}>
+                    <Card key={invoice.id} className="cursor-pointer hover:bg-muted/50" onClick={() => invoice.pdf_url && handleDownload(invoice.pdf_url, invoice.invoice_number)}>
                       <CardContent className="pt-4">
                         <div className="flex justify-between items-start mb-2">
                           <div>

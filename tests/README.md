@@ -163,16 +163,42 @@ See `tests/api/COVERAGE.md` for:
 Located in `tests/performance/k6/`, these load tests measure API response times and throughput.
 
 ### k6 Test Files
-- `products-load.test.js` - Load test for products endpoint (GET)
-- `orders-load.test.js` - Load test for orders creation (POST)
+- `products-load.test.js` - Load test for products endpoint (GET) with smoke, baseline, and stress scenarios
+- `orders-load.test.js` - Load test for orders creation (POST) and full checkout flow (order + payment)
+- `invoices-load.test.js` - Load test for invoices endpoint with filtering and pagination
+- `product-batches-load.test.js` - Load test for batch creation and updates
 - `utils/supabaseClient.js` - Shared k6 Supabase client
+
+### Test Scenarios
+
+Each test file includes multiple scenarios:
+
+| Scenario | Description | VUs | Duration |
+|----------|-------------|-----|----------|
+| smoke | Basic sanity check | 1 | 1m |
+| baseline | Normal load pattern | 5-10 | 5m |
+| stress | High load to find limits | 20-50 | 10m |
+| checkout_flow | Order + Payment combined | 2 | 3m |
 
 ### Running Performance Tests
 ```bash
-npm run perf:k6:products   # Products only
-npm run perf:k6:orders     # Orders only
-npm run perf:k6            # Both
+npm run perf:k6:products   # Products endpoint only
+npm run perf:k6:orders     # Orders + checkout flow
+npm run perf:k6:invoices   # Invoices endpoint
+npm run perf:k6:batches    # Product batches
+npm run perf:k6            # All performance tests
+npm run perf:k6:smoke      # Quick smoke tests only
 ```
+
+### Thresholds
+
+| Endpoint | p(95) | p(99) | Error Rate |
+|----------|-------|-------|------------|
+| Products | <600ms | <1500ms | <1% |
+| Orders | <800ms | <2000ms | <2% |
+| Order-Pay | <1200ms | <2000ms | <2% |
+| Invoices | <600ms | <1500ms | <1% |
+| Batches | <800ms | <2000ms | <2% |
 
 ### Required Environment Variables
 ```env

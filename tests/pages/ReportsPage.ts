@@ -5,15 +5,14 @@ export class ReportsPage extends BasePage {
   // Locators
   private readonly pageHeading: Locator;
   private readonly revenueText: Locator;
-  private readonly charts: Locator;
   private readonly dateFilterButton: Locator;
 
   constructor(page: Page) {
     super(page);
     
-    this.pageHeading = page.getByRole('heading', { name: /reports/i });
+    // Reports page heading could be "Reports" or "Business Report"
+    this.pageHeading = page.getByRole('heading', { name: /report/i });
     this.revenueText = page.getByText(/revenue/i).first();
-    this.charts = page.locator('svg');
     this.dateFilterButton = page.getByRole('button', { name: /date/i }).or(page.getByRole('button', { name: /period/i }));
   }
 
@@ -29,8 +28,18 @@ export class ReportsPage extends BasePage {
     return await this.isVisible(this.revenueText);
   }
 
+  /**
+   * Count visible chart elements
+   * Looks for SVG charts, canvas elements, or recharts containers
+   */
   async getChartCount(): Promise<number> {
-    return await this.charts.count();
+    // Look for various chart implementations
+    const svgCharts = await this.page.locator('svg.recharts-surface, [class*="chart"] svg, [class*="Chart"] svg').count();
+    const canvasCharts = await this.page.locator('canvas').count();
+    const rechartsContainers = await this.page.locator('.recharts-wrapper, [class*="recharts"]').count();
+    
+    // Return the highest count (charts may be detected by multiple selectors)
+    return Math.max(svgCharts, canvasCharts, rechartsContainers);
   }
 
   async clickDateFilter() {

@@ -32,10 +32,11 @@ test.describe('Orders API', () => {
 
     if (!productId) {
       test.skip(true, 'PLAYWRIGHT_DEFAULT_PRODUCT_ID or K6_DEFAULT_PRODUCT_ID must be set for this test');
+      return;
     }
 
     const payload = {
-      customer_id: process.env.PLAYWRIGHT_DEFAULT_CUSTOMER_ID || null,
+      customer_id: null, // No customer - anonymous order
       items: [
         {
           product_id: productId,

@@ -45,39 +45,16 @@ serve(async (req) => {
 
       if (productsError) throw productsError;
 
-      // Fetch stock movements
-      const { data: movements, error: movementsError } = await supabase
-        .from("stock_movements")
-        .select("product_id, quantity, movement_type");
-
-      if (movementsError) throw movementsError;
-
-      const movementTotals: Record<string, number> = {};
-
-      movements?.forEach(m => {
-        const qty = Number(m.quantity);
-        const type = m.movement_type?.toUpperCase();
-
-        // Positive/negative effect based on type rules
-        if (["SALE", "OUT", "EXPIRED", "DAMAGED", "WASTAGE"].includes(type)) {
-          movementTotals[m.product_id] = (movementTotals[m.product_id] || 0) - qty;
-        } else {
-          // Default: treat as STOCK IN
-          movementTotals[m.product_id] = (movementTotals[m.product_id] || 0) + qty;
-        }
-      });
-
+      // Calculate total stock from batch quantities only
       const productsWithStock = products.map((p) => {
         const batchTotal = p.product_batches?.reduce(
           (sum: number, b: any) => sum + Number(b.quantity),
           0
         ) ?? 0;
 
-        const movementAdjust = movementTotals[p.id] || 0;
-
         return {
           ...p,
-          total_stock: batchTotal + movementAdjust,
+          total_stock: batchTotal,
           batches: p.product_batches || [],
         };
       });
@@ -108,6 +85,7 @@ serve(async (req) => {
           name: body.name,
           category: body.category,
           unit_price: body.unit_price,
+          cost_price: body.cost_price || null,
           description: body.description,
           sku: body.sku,
           unit_of_measure: body.unit_of_measure || "unit",
@@ -135,7 +113,7 @@ serve(async (req) => {
         });
       }
 
-      const allowed = ["name", "category", "unit_price", "description", "sku", "unit_of_measure"];
+      const allowed = ["name", "category", "unit_price", "cost_price", "description", "sku", "unit_of_measure"];
       const updateData: Record<string, any> = {};
 
       for (const key of allowed) {
@@ -165,8 +143,9 @@ serve(async (req) => {
 
   } catch (e) {
     console.error("Error in products function:", e);
+    const errorMessage = e instanceof Error ? e.message : "Unknown error";
     return new Response(
-      JSON.stringify({ error: e.message || "Unknown error" }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

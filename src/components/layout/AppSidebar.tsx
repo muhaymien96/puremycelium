@@ -6,9 +6,14 @@ import {
   Users,
   Receipt,
   BarChart3,
+  Calendar,
+  Upload,
+  History,
   Shield,
   LogOut,
   UserCircle,
+  Settings,
+  Wallet,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
@@ -37,9 +42,11 @@ const menuItems = [
   { title: "Inventory", url: "/inventory", icon: Package },
   { title: "Customers", url: "/customers", icon: Users },
   { title: "Invoices", url: "/invoices", icon: Receipt },
-  { title: "Reports", url: "/reports", icon: BarChart3 },
+  { title: "Expenses", url: "/expenses", icon: Wallet },
+  { title: "Events", url: "/events", icon: Calendar },
+  { title: "Import Sales", url: "/import", icon: Upload },
+  { title: "Import History", url: "/import-history", icon: History },
 ];
-
 export function AppSidebar() {
   const { open } = useSidebar();
   const location = useLocation();
@@ -98,18 +105,44 @@ export function AppSidebar() {
 
               {/* Admin Row */}
               {isAdmin && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location.pathname === "/admin"}
-                    className="transition-colors duration-200 hover:bg-accent"
-                  >
-                    <NavLink to="/admin" className="flex items-center gap-3">
-                      <Shield className="h-4 w-4 text-red-500" />
-                      {open && <span className="text-red-600 font-medium">Admin</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === "/reports"}
+                      className="transition-colors duration-200 hover:bg-accent"
+                    >
+                      <NavLink to="/reports" className="flex items-center gap-3">
+                        <BarChart3 className="h-4 w-4" />
+                        {open && <span>Reports</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === "/admin"}
+                      className="transition-colors duration-200 hover:bg-accent"
+                    >
+                      <NavLink to="/admin" className="flex items-center gap-3">
+                        <Shield className="h-4 w-4 text-red-500" />
+                        {open && <span className="text-red-600 font-medium">Admin</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === "/settings"}
+                      className="transition-colors duration-200 hover:bg-accent"
+                    >
+                      <NavLink to="/settings" className="flex items-center gap-3">
+                        <Settings className="h-4 w-4" />
+                        {open && <span>Settings</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </>
               )}
             </SidebarMenu>
           </SidebarGroupContent>

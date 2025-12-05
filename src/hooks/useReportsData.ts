@@ -1,269 +1,257 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { subDays, format } from 'date-fns';
+import { format } from 'date-fns';
 
-export const useReportsData = () => {
+export const useReportsData = (startDate: Date, endDate: Date) => {
   return useQuery({
-    queryKey: ['reports-data'],
+    queryKey: ['reports-data', startDate.toISOString(), endDate.toISOString()],
     queryFn: async () => {
-      const thirtyDaysAgo = subDays(new Date(), 30);
-
-      // Orders for category / product / status analytics (30 days)
+      // Fetch orders with items and product costs - use transaction_datetime for accurate date filtering
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select(`
           *,
-          order_items(*, products(name, category))
+          order_items(*, products(name, category, cost_price, unit_price))
         `)
-        .gte('created_at', thirtyDaysAgo.toISOString())
-        .order('created_at', { ascending: true });
+        .gte('transaction_datetime', startDate.toISOString())
+        .lte('transaction_datetime', endDate.toISOString())
+        .order('transaction_datetime', { ascending: true });
 
       if (ordersError) throw ordersError;
 
-      // Financial transactions (for revenue / cost / profit / refunds)
+      // Fetch financial transactions - use transaction_at for accurate date filtering
       const { data: financialTx, error: finError } = await supabase
         .from('financial_transactions')
         .select('*')
-        .gte('created_at', thirtyDaysAgo.toISOString());
+        .gte('transaction_at', startDate.toISOString())
+        .lte('transaction_at', endDate.toISOString());
 
       if (finError) throw finError;
 
-      // Refunds table as backup
-      const { data: refunds, error: refundsError } = await supabase
-        .from('refunds')
-        .select('amount, created_at, status')
-        .eq('status', 'completed')
-        .gte('created_at', thirtyDaysAgo.toISOString());
+      // Fetch expenses
+      const { data: expenses, error: expError } = await supabase
+        .from('expenses')
+        .select('*')
+        .gte('expense_date', startDate.toISOString().split('T')[0])
+        .lte('expense_date', endDate.toISOString().split('T')[0]);
 
-      if (refundsError) throw refundsError;
+      if (expError) throw expError;
 
-      // ===== Daily Sales (30 days) - NET of refunds when possible =====
-      const salesByDate: Record<
-        string,
-        {
-          revenue: number;
-          refunds: number;
-          netRevenue: number;
-          cost: number;
-          profit: number;
+      // Fetch market events with their orders for profitability
+      const { data: marketEvents, error: eventsError } = await supabase
+        .from('market_events')
+        .select('*')
+        .gte('event_date', startDate.toISOString().split('T')[0])
+        .lte('event_date', endDate.toISOString().split('T')[0]);
+
+      if (eventsError) throw eventsError;
+
+      // Calculate daily sales with profit data
+      const salesByDate: Record<string, any> = {};
+
+      (financialTx || []).forEach((tx: any) => {
+        const txDate = new Date(tx.transaction_at || tx.created_at);
+        const dateKey = format(txDate, 'MMM dd');
+        if (!salesByDate[dateKey]) {
+          salesByDate[dateKey] = { revenue: 0, refunds: 0, netRevenue: 0, cost: 0, profit: 0 };
         }
-      > = {};
 
-      if (financialTx && financialTx.length > 0) {
-        (financialTx as any[]).forEach((tx) => {
-          const txDate = new Date(tx.created_at);
-          const dateKey = format(txDate, 'MMM dd');
-
-          if (!salesByDate[dateKey]) {
-            salesByDate[dateKey] = {
-              revenue: 0,
-              refunds: 0,
-              netRevenue: 0,
-              cost: 0,
-              profit: 0,
-            };
-          }
-
-          if (tx.transaction_type === 'sale') {
-            salesByDate[dateKey].revenue += Number(tx.amount || 0);
-            salesByDate[dateKey].cost += Number(tx.cost || 0);
-            salesByDate[dateKey].profit += Number(tx.profit || 0);
-          } else if (tx.transaction_type === 'refund') {
-            const absAmt = Math.abs(Number(tx.amount || 0));
-            salesByDate[dateKey].refunds += absAmt;
-            salesByDate[dateKey].profit += Number(tx.profit || 0); // usually negative
-          }
-        });
-
-        // Compute netRevenue per day
-        Object.values(salesByDate).forEach((d) => {
-          d.netRevenue = d.revenue - d.refunds;
-        });
-      } else {
-        // Fallback if no financial_transactions yet: use order totals only (gross)
-        (orders || []).forEach((order: any) => {
-          const dateKey = format(new Date(order.created_at), 'MMM dd');
-          if (!salesByDate[dateKey]) {
-            salesByDate[dateKey] = {
-              revenue: 0,
-              refunds: 0,
-              netRevenue: 0,
-              cost: 0,
-              profit: 0,
-            };
-          }
-          salesByDate[dateKey].revenue += Number(order.total_amount);
-          salesByDate[dateKey].netRevenue = salesByDate[dateKey].revenue;
-        });
-      }
-
-      const dailySales = Object.entries(salesByDate).map(
-        ([date, data]: [string, any]) => ({
-          date,
-          amount: data.netRevenue ?? data.revenue,
-          cost: data.cost || 0,
-          profit: data.profit || 0,
-        })
-      );
-
-      // ===== Revenue by category =====
-      const revenueByCategory = (orders || []).reduce((acc: any, order: any) => {
-        order.order_items?.forEach((item: any) => {
-          const category = item.products?.category || 'other';
-          if (!acc[category]) {
-            acc[category] = 0;
-          }
-          acc[category] += Number(item.subtotal);
-        });
-        return acc;
-      }, {});
-
-      const categoryData = Object.entries(revenueByCategory || {}).map(
-        ([name, value]: [string, any]) => ({
-          name: name.charAt(0).toUpperCase() + name.slice(1),
-          value: Number(value),
-        })
-      );
-
-      // ===== Top products by revenue =====
-      const productSales = (orders || []).reduce((acc: any, order: any) => {
-        order.order_items?.forEach((item: any) => {
-          const productName = item.products?.name || 'Unknown';
-          if (!acc[productName]) {
-            acc[productName] = { quantity: 0, revenue: 0 };
-          }
-          acc[productName].quantity += Number(item.quantity);
-          acc[productName].revenue += Number(item.subtotal);
-        });
-        return acc;
-      }, {});
-
-      const topProducts = Object.entries(productSales || {})
-        .map(([name, data]: [string, any]) => ({
-          name,
-          quantity: data.quantity,
-          revenue: data.revenue,
-        }))
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 5);
-
-      // ===== Order status distribution =====
-      const statusDistribution = (orders || []).reduce((acc: any, order: any) => {
-        const status = order.status || 'pending';
-        if (!acc[status]) {
-          acc[status] = 0;
+        if (tx.transaction_type === 'sale') {
+          salesByDate[dateKey].revenue += Number(tx.amount || 0);
+          salesByDate[dateKey].cost += Number(tx.cost || 0);
+          salesByDate[dateKey].profit += Number(tx.profit || 0);
         }
-        acc[status]++;
-        return acc;
-      }, {});
-
-      const statusData = Object.entries(statusDistribution || {}).map(
-        ([name, value]: [string, any]) => ({
-          name: name.charAt(0).toUpperCase() + name.slice(1),
-          value: Number(value),
-        })
-      );
-
-      // ===== KPIs: This month =====
-      const now = new Date();
-
-      const thisMonthTx = (financialTx || []).filter((tx: any) => {
-        const txDate = new Date(tx.created_at);
-        return (
-          txDate.getMonth() === now.getMonth() &&
-          txDate.getFullYear() === now.getFullYear()
-        );
+        if (tx.transaction_type === 'refund') {
+          const abs = Math.abs(Number(tx.amount || 0));
+          salesByDate[dateKey].refunds += abs;
+          salesByDate[dateKey].profit += Number(tx.profit || 0);
+        }
       });
 
-      const saleTx = thisMonthTx.filter(
-        (tx: any) => tx.transaction_type === 'sale'
+      Object.values(salesByDate).forEach((d: any) => {
+        d.netRevenue = d.revenue - d.refunds;
+      });
+
+      // Get expenses by date for combined chart
+      const expensesByDate: Record<string, number> = {};
+      (expenses || []).forEach((e: any) => {
+        const dateKey = format(new Date(e.expense_date), 'MMM dd');
+        expensesByDate[dateKey] = (expensesByDate[dateKey] || 0) + Number(e.amount);
+      });
+
+      const dailySales = Object.entries(salesByDate).map(([date, d]: any) => ({
+        date,
+        amount: d.netRevenue,
+        cost: d.cost,
+        profit: d.profit,
+        revenue: d.revenue,
+        expenses: expensesByDate[date] || 0,
+      }));
+
+      // Revenue by category
+      const revenueByCategory: Record<string, number> = {};
+      (orders || []).forEach((o: any) => {
+        o.order_items?.forEach((i: any) => {
+          const cat = i.products?.category || 'other';
+          revenueByCategory[cat] = (revenueByCategory[cat] || 0) + Number(i.subtotal || 0);
+        });
+      });
+      const categoryData = Object.entries(revenueByCategory).map(([name, value]: any) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        value,
+      }));
+
+      // Top products with units sold and cost data
+      const productSales: Record<string, { quantity: number; revenue: number; cost: number }> = {};
+      (orders || []).forEach((o: any) => {
+        o.order_items?.forEach((i: any) => {
+          const name = i.products?.name || 'Unknown';
+          if (!productSales[name]) productSales[name] = { quantity: 0, revenue: 0, cost: 0 };
+          productSales[name].quantity += Number(i.quantity);
+          productSales[name].revenue += Number(i.subtotal);
+          // Estimate cost from product cost_price or 60% of unit_price
+          const unitCost = i.products?.cost_price || (Number(i.unit_price) * 0.6);
+          productSales[name].cost += Number(i.quantity) * unitCost;
+        });
+      });
+
+      const topProducts = Object.entries(productSales)
+        .map(([name, d]: any) => ({ name, unitsSold: d.quantity, revenue: d.revenue, cost: d.cost }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 10); // Get top 10 for margin analysis
+
+      // Calculate total units sold
+      const totalUnitsSold = Object.values(productSales).reduce((sum, p) => sum + p.quantity, 0);
+
+      // Order status breakdown
+      const statusData: Record<string, number> = {};
+      (orders || []).forEach((o: any) => {
+        statusData[o.status] = (statusData[o.status] || 0) + 1;
+      });
+      const status = Object.entries(statusData).map(([name, value]: any) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        value,
+      }));
+
+      // Calculate KPIs from financial transactions
+      const revenue = (financialTx || [])
+        .filter((t: any) => t.transaction_type === 'sale')
+        .reduce((sum: number, t: any) => sum + Number(t.amount), 0);
+
+      const refunds = (financialTx || [])
+        .filter((t: any) => t.transaction_type === 'refund')
+        .reduce((sum: number, t: any) => sum + Math.abs(Number(t.amount)), 0);
+
+      const totalCost = (financialTx || [])
+        .filter((t: any) => t.transaction_type === 'sale')
+        .reduce((sum: number, t: any) => sum + Number(t.cost || 0), 0);
+
+      const grossProfit = revenue - totalCost;
+      const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+
+      const netRevenue = revenue - refunds;
+      const totalOrders = orders?.length ?? 0;
+      const avgOrderValue = totalOrders > 0 ? netRevenue / totalOrders : 0;
+
+      // Total expenses
+      const totalExpenses = (expenses || []).reduce((sum: number, e: any) => sum + Number(e.amount), 0);
+
+      // Net profit (after expenses)
+      const netProfit = grossProfit - totalExpenses;
+
+      // Expense breakdown by type
+      const expenseByType: Record<string, number> = {};
+      (expenses || []).forEach((e: any) => {
+        const type = e.expense_type || 'other';
+        expenseByType[type] = (expenseByType[type] || 0) + Number(e.amount);
+      });
+      const expenseBreakdown = Object.entries(expenseByType).map(([name, value]) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        value,
+      }));
+
+      // Event profitability - use linked expenses (auto-created from event costs)
+      const eventProfitability = await Promise.all(
+        (marketEvents || []).map(async (event: any) => {
+          // Get orders for this event
+          const { data: eventOrders } = await supabase
+            .from('orders')
+            .select('total_amount')
+            .eq('market_event_id', event.id)
+            .neq('status', 'cancelled')
+            .neq('status', 'refunded');
+
+          const eventRevenue = (eventOrders || []).reduce((sum: number, o: any) => sum + Number(o.total_amount), 0);
+          
+          // Get expenses linked to this event (includes auto-created stall_fee, travel, other)
+          const { data: eventExpenses } = await supabase
+            .from('expenses')
+            .select('amount')
+            .eq('market_event_id', event.id);
+
+          const totalEventCosts = (eventExpenses || []).reduce((sum: number, e: any) => sum + Number(e.amount), 0);
+
+          return {
+            id: event.id,
+            name: event.name,
+            date: event.event_date,
+            location: event.location,
+            revenue: eventRevenue,
+            costs: totalEventCosts,
+            profit: eventRevenue - totalEventCosts,
+          };
+        })
       );
-      const refundTx = thisMonthTx.filter(
-        (tx: any) => tx.transaction_type === 'refund'
-      );
 
-      const totalRevenue =
-        saleTx.reduce(
-          (sum: number, tx: any) => sum + Number(tx.amount || 0),
-          0
-        ) || 0;
+      // Raw data for CSV export (enhanced with units sold)
+      const rawOrdersData = (orders || []).map((o: any) => {
+        const unitsSold = o.order_items?.reduce((sum: number, i: any) => sum + Number(i.quantity), 0) || 0;
+        return {
+          order_number: o.order_number,
+          date: format(new Date(o.created_at), 'yyyy-MM-dd HH:mm'),
+          status: o.status,
+          total: Number(o.total_amount),
+          delivery_fee: Number(o.delivery_fee || 0),
+          items: o.order_items?.length || 0,
+          units_sold: unitsSold,
+        };
+      });
 
-      const totalCost =
-        saleTx.reduce(
-          (sum: number, tx: any) => sum + Number(tx.cost || 0),
-          0
-        ) || 0;
+      const rawExpensesData = (expenses || []).map((e: any) => ({
+        date: e.expense_date,
+        type: e.expense_type,
+        description: e.description,
+        amount: Number(e.amount),
+      }));
 
-      // Net profit from all tx in the month (sales + refunds)
-      const netProfitThisMonth =
-        thisMonthTx.reduce(
-          (sum: number, tx: any) => sum + Number(tx.profit || 0),
-          0
-        ) || 0;
-
-      // Refunds from financial_transactions (preferred)
-      const totalRefundsFromFin =
-        refundTx.reduce(
-          (sum: number, tx: any) =>
-            sum + Math.abs(Number(tx.amount || 0)),
-          0
-        ) || 0;
-
-      // Fallback: refunds table (this month only) if no financial refund tx exist
-      const refundsThisMonthFromTable =
-        (refunds || [])
-          .filter((r: any) => {
-            const rDate = new Date(r.created_at);
-            return (
-              rDate.getMonth() === now.getMonth() &&
-              rDate.getFullYear() === now.getFullYear()
-            );
-          })
-          .reduce(
-            (sum: number, r: any) => sum + Number(r.amount || 0),
-            0
-          ) || 0;
-
-      const finalRefunds = totalRefundsFromFin || refundsThisMonthFromTable;
-
-      // Fallback to orders if no financial transactions yet
-      const thisMonthOrders =
-        (orders || []).filter((order: any) => {
-          const orderDate = new Date(order.created_at);
-          return (
-            orderDate.getMonth() === now.getMonth() &&
-            orderDate.getFullYear() === now.getFullYear()
-          );
-        }) || [];
-
-      const orderBasedRevenue =
-        thisMonthOrders.reduce(
-          (sum: number, order: any) => sum + Number(order.total_amount),
-          0
-        ) || 0;
-
-      const totalOrders = thisMonthOrders.length || 0;
-      const baseRevenue = totalRevenue || orderBasedRevenue;
-      const netRevenue = baseRevenue - finalRefunds;
-      const avgOrderValue = totalOrders > 0 ? baseRevenue / totalOrders : 0;
-
-      const profitMargin =
-        netRevenue > 0 ? (netProfitThisMonth / netRevenue) * 100 : 0;
+      // Product sales for export
+      const rawProductSalesData = Object.entries(productSales)
+        .map(([name, d]: any) => ({ product: name, units_sold: d.quantity, revenue: d.revenue }))
+        .sort((a, b) => b.revenue - a.revenue);
 
       return {
         dailySales,
         categoryData,
         topProducts,
-        statusData,
+        statusData: status,
+        expenseBreakdown,
+        eventProfitability,
         kpis: {
-          totalRevenue: baseRevenue,
+          totalRevenue: revenue,
+          netRevenue,
           totalOrders,
           avgOrderValue,
-          totalRefunds: finalRefunds,
-          netRevenue,
+          grossProfit,
+          grossMargin,
+          totalExpenses,
           totalCost,
-          totalProfit: netProfitThisMonth,
-          profitMargin,
+          netProfit,
+          totalUnitsSold,
+        },
+        rawData: {
+          orders: rawOrdersData,
+          expenses: rawExpensesData,
+          productSales: rawProductSalesData,
         },
       };
     },

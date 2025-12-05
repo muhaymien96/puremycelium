@@ -2,19 +2,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import type { Tables } from '@/integrations/supabase/types';
 
-export interface Product {
-  id: string;
-  name: string;
-  category: string;
-  unit_price: number;
-  description?: string;
-  sku?: string;
-  unit_of_measure?: string;
-  is_active: boolean;
-  total_stock: number;
-  batches: any[];
-}
+export type ProductBatch = Tables<"product_batches">;
+export type Product = Tables<"products"> & { batches: ProductBatch[] };
+
 
 export const useProducts = () => {
   const queryClient = useQueryClient();
@@ -31,9 +23,9 @@ export const useProducts = () => {
           table: 'products'
         },
         (payload) => {
-          console.log('Product change detected:', payload);
           queryClient.invalidateQueries({ queryKey: ['products'] });
           queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
         }
       )
       .subscribe();
@@ -49,9 +41,9 @@ export const useProducts = () => {
           table: 'product_batches'
         },
         (payload) => {
-          console.log('Batch change detected:', payload);
           queryClient.invalidateQueries({ queryKey: ['products'] });
           queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
         }
       )
       .subscribe();
@@ -93,6 +85,7 @@ export const useCreateProduct = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       toast.success('Product created successfully');
     },
     onError: (error: any) => {
@@ -117,6 +110,7 @@ export const useCreateBatch = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       toast.success('Batch added successfully');
     },
     onError: (error: any) => {
@@ -183,6 +177,7 @@ export const useDeleteProduct = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['inactive-products'] });
       toast.success('Product deactivated successfully');
     },
@@ -221,6 +216,7 @@ export const useReactivateProduct = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['inactive-products'] });
       toast.success('Product reactivated successfully');
     },
@@ -249,6 +245,7 @@ export const useUpdateProduct = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       toast.success('Product updated successfully');
     },
     onError: (error: any) => {

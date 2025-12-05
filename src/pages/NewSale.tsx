@@ -1,34 +1,34 @@
-// FULL NEWSALE FILE WITH FAST FAVOURITES
-// 📌 Paste this whole file replacing current NewSale.tsx
-
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'framer-motion';
 
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import {
   Plus,
   Minus,
-  CreditCard,
   Banknote,
   Link2,
   Mail,
-  Search,
   Flame,
+  FileText,
 } from 'lucide-react';
 
 import { useProducts } from '@/hooks/useProducts';
 import { useCustomers } from '@/hooks/useCustomers';
-import { useCreateOrder, useProcessPayment } from '@/hooks/useOrders';
+import { useCreateOrder, useProcessPayment, useSendPaymentLink } from '@/hooks/useOrders';
+import { useUpcomingMarketEvents } from '@/hooks/useMarketEvents';
+import { useBusinessProfiles } from '@/hooks/useBusinessSettings';
 import { AddCustomerModal } from '@/components/AddCustomerModal';
-import { ProcessingModal } from '@/components/ProcessingModal';
+import { LoadingOverlay } from '@/components/LoadingOverlay';
 import { supabase } from '@/integrations/supabase/client';
 
 type CartItem = {
@@ -44,12 +44,15 @@ const NewSale = () => {
 
   const [paymentMethod, setPaymentMethod] = useState<string>('');
   const [customerId, setCustomerId] = useState<string>('none');
+  const [eventId, setEventId] = useState<string>('none');
+  const [businessProfileId, setBusinessProfileId] = useState<string>('default');
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [sendLinkToCustomer, setSendLinkToCustomer] = useState(false);
-  const [showTerminalModal, setShowTerminalModal] = useState(false);
-  const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
-  const [currentOrderNumber, setCurrentOrderNumber] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [includeDelivery, setIncludeDelivery] = useState(false);
+  const [transactionDate, setTransactionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [autoSendInvoice, setAutoSendInvoice] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -58,11 +61,31 @@ const NewSale = () => {
 
   const { data: products, isLoading: loadingProducts } = useProducts();
   const { data: customers, isLoading: loadingCustomers } = useCustomers();
+  const { data: events, isLoading: loadingEvents } = useUpcomingMarketEvents();
+  const { data: businessProfiles } = useBusinessProfiles();
   const createOrder = useCreateOrder();
   const processPayment = useProcessPayment();
+  const sendPaymentLink = useSendPaymentLink();
 
-  const total = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0);
+  const deliveryFee = includeDelivery ? 50 : 0;
+  const total = subtotal + deliveryFee;
   const canCheckout = cartItems.length > 0 && !!paymentMethod;
+
+  // Get selected customer details
+  const selectedCustomer = useMemo(() => {
+    if (customerId === 'none') return null;
+    return customers?.find(c => c.id === customerId) || null;
+  }, [customerId, customers]);
+
+  const customerHasEmail = selectedCustomer?.email ? true : false;
+
+  // Clear payment link selection if customer is deselected
+  useEffect(() => {
+    if (customerId === 'none' && paymentMethod === 'PAYMENT_LINK') {
+      setPaymentMethod('');
+    }
+  }, [customerId, paymentMethod]);
 
   // Fetch last 50 orders → used for fast favourites
   useEffect(() => {
@@ -145,9 +168,16 @@ const NewSale = () => {
   const handleCheckout = async () => {
     if (!canCheckout) return toast.error('Add items & select payment');
 
+    setIsProcessing(true);
     try {
       const orderData = {
         customer_id: customerId === 'none' ? null : customerId,
+        market_event_id: eventId === 'none' ? null : eventId,
+        business_profile_id: businessProfileId === 'default' ? null : businessProfileId,
+        delivery_fee: deliveryFee,
+        transaction_datetime: transactionDate !== new Date().toISOString().split('T')[0] 
+          ? new Date(transactionDate).toISOString() 
+          : undefined,
         items: cartItems.map((i) => ({
           product_id: i.id,
           quantity: i.quantity,
@@ -157,22 +187,48 @@ const NewSale = () => {
       const { order } = await createOrder.mutateAsync(orderData);
 
       if (paymentMethod === 'CASH') {
-        await processPayment.mutateAsync({ order_id: order.id, payment_method: 'CASH', amount: total });
+        await processPayment.mutateAsync({ 
+          order_id: order.id, 
+          payment_method: 'CASH', 
+          amount: total,
+          business_profile_id: businessProfileId === 'default' ? undefined : businessProfileId
+        });
+
+        // Note: Invoice is automatically generated and sent by the order-pay function
+        // No need to manually send it here
+        if (autoSendInvoice && customerHasEmail) {
+          toast.success('Sale completed - invoice sent to customer');
+        }
+
         navigate(`/payment/success?orderId=${order.id}`);
       }
 
-      if (paymentMethod === 'YOKO_WEBPOS') {
-        setCurrentOrderId(order.id);
-        setCurrentOrderNumber(order.order_number);
-        setShowTerminalModal(true);
-      }
-
       if (paymentMethod === 'PAYMENT_LINK') {
-        const r = await processPayment.mutateAsync({ order_id: order.id, payment_method: 'PAYMENT_LINK', amount: total });
-        if (r.checkout_url) window.location.href = r.checkout_url;
+        if (customerHasEmail && selectedCustomer?.email) {
+          // Send payment link via email
+          await sendPaymentLink.mutateAsync({
+            order_id: order.id,
+            customer_email: selectedCustomer.email,
+            amount: total,
+            business_profile_id: businessProfileId === 'default' ? undefined : businessProfileId
+          });
+          toast.success('Payment link sent to customer');
+          navigate(`/payment/success?orderId=${order.id}&linkSent=true`);
+        } else {
+          // No customer email - use redirect payment link
+          const r = await processPayment.mutateAsync({ 
+            order_id: order.id, 
+            payment_method: 'PAYMENT_LINK', 
+            amount: total,
+            business_profile_id: businessProfileId === 'default' ? undefined : businessProfileId
+          });
+          if (r.checkout_url) window.location.href = r.checkout_url;
+        }
       }
     } catch {
       toast.error('Checkout failed');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -181,7 +237,12 @@ const NewSale = () => {
     const out = p.total_stock <= 0;
 
     return (
-      <div className="border rounded-xl p-3 flex justify-between items-center bg-card hover:shadow-sm">
+      <motion.div 
+        layout
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="border rounded-xl p-3 flex justify-between items-center bg-card hover:shadow-sm transition-shadow"
+      >
         <div>
           <p className="font-medium">{p.name}</p>
           <p className="text-xs text-muted-foreground">
@@ -221,21 +282,51 @@ const NewSale = () => {
             <Plus className="h-4 w-4" />
           </Button>
         )}
-      </div>
+      </motion.div>
     );
   };
 
-  const PaymentButton = ({ value, label, Icon }: any) => (
-    <button
-      className={`flex items-center gap-3 w-full p-3 rounded-xl border ${
-        paymentMethod === value ? 'border-primary bg-primary/5' : ''
+  const PaymentButton = ({ value, label, Icon, disabled, disabledReason }: any) => (
+    <motion.button
+      whileTap={disabled ? {} : { scale: 0.98 }}
+      className={`flex items-center gap-3 w-full p-3 rounded-xl border transition-colors ${
+        paymentMethod === value ? 'border-primary bg-primary/5' : disabled ? 'opacity-50 cursor-not-allowed bg-muted/30' : 'hover:bg-muted/50'
       }`}
-      onClick={() => setPaymentMethod(value)}
+      onClick={() => !disabled && setPaymentMethod(value)}
+      disabled={disabled}
+      title={disabled ? disabledReason : undefined}
     >
       <Icon className="h-5 w-5" />
-      {label}
-    </button>
+      <span className="flex-1 text-left">{label}</span>
+      {disabled && <span className="text-xs text-muted-foreground">({disabledReason})</span>}
+    </motion.button>
   );
+
+  // Auto-invoice toggle component
+  const AutoInvoiceToggle = () => {
+    if (!customerHasEmail) return null;
+    
+    return (
+      <motion.div
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: 'auto' }}
+        exit={{ opacity: 0, height: 0 }}
+        className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border"
+      >
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-muted-foreground" />
+          <Label htmlFor="auto-invoice" className="text-sm cursor-pointer">
+            {paymentMethod === 'CASH' ? 'Send invoice after sale' : 'Email payment link'}
+          </Label>
+        </div>
+        <Switch
+          id="auto-invoice"
+          checked={autoSendInvoice}
+          onCheckedChange={setAutoSendInvoice}
+        />
+      </motion.div>
+    );
+  };
 
   return (
     <AppLayout>
@@ -243,40 +334,117 @@ const NewSale = () => {
 
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">New Sale</h1>
-          <Button onClick={handleCheckout} disabled={!canCheckout} className="hidden md:inline-block">
-            Complete Sale — R {total.toFixed(2)}
-          </Button>
         </div>
 
-        {/* CUSTOMER */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Customer (Optional)</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Select value={customerId} onValueChange={setCustomerId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select customer" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No customer</SelectItem>
-                {customers?.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.first_name} {c.last_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        {/* DESKTOP 3-COLUMN LAYOUT */}
+        <div className="hidden lg:grid grid-cols-[1fr_2fr_1fr] gap-6">
+          
+          {/* LEFT: Customer & Event */}
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Invoice From (Optional)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Select value={businessProfileId} onValueChange={setBusinessProfileId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Use default profile" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">
+                      {businessProfiles?.find(p => p.is_default)?.profile_name || 'Default'}
+                    </SelectItem>
+                    {businessProfiles?.filter(p => !p.is_default).map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.profile_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
 
-            <Button variant="outline" onClick={() => setShowCustomerModal(true)} size="sm">
-              <Plus className="h-4 w-4 mr-1" /> Add Customer
-            </Button>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Customer</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Select value={customerId} onValueChange={setCustomerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No customer</SelectItem>
+                    {customers?.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.first_name} {c.last_name} {c.email && <span className="text-muted-foreground ml-1">({c.email})</span>}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-        {/* DESKTOP */}
-        <div className="hidden lg:grid grid-cols-[2fr_1fr] gap-6">
-          {/* Product Panel */}
+                {selectedCustomer && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-xs text-muted-foreground"
+                  >
+                    {selectedCustomer.email ? (
+                      <span className="flex items-center gap-1 text-green-600">
+                        <Mail className="h-3 w-3" /> {selectedCustomer.email}
+                      </span>
+                    ) : (
+                      <span className="text-amber-600">No email - invoice cannot be sent</span>
+                    )}
+                  </motion.div>
+                )}
+
+                <Button variant="outline" onClick={() => setShowCustomerModal(true)} size="sm" className="w-full">
+                  <Plus className="h-4 w-4 mr-1" /> Add Customer
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Transaction Date</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Input
+                  type="date"
+                  value={transactionDate}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setTransactionDate(e.target.value)}
+                />
+                {transactionDate !== new Date().toISOString().split('T')[0] && (
+                  <p className="text-xs text-amber-600 mt-2">Recording historical transaction</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Event (Optional)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Select value={eventId} onValueChange={setEventId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select event" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No event</SelectItem>
+                    {events?.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.name} - {new Date(e.event_date).toLocaleDateString()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* CENTER: Products */}
           <div className="space-y-4">
 
             {fastFavourites.length > 0 && (
@@ -311,28 +479,67 @@ const NewSale = () => {
             </Card>
           </div>
 
-          {/* CART + PAYMENT */}
+          {/* RIGHT: Cart + Payment */}
           <div className="space-y-4">
             <Card>
               <CardHeader><CardTitle>Cart</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {cartItems.map((i) => (
-                  <div key={i.id} className="flex justify-between border p-3 rounded-lg">
-                    <span>{i.name}</span>
-                    <div className="flex gap-2 items-center">
-                      <Button size="icon" variant="outline" onClick={() => updateQuantity(i.id, -1)}>
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span>{i.quantity}</span>
-                      <Button size="icon" variant="outline" onClick={() => updateQuantity(i.id, +1)}>
-                        <Plus className="h-3 w-3" />
-                      </Button>
-                      <Button size="icon" variant="ghost" onClick={() => removeItem(i.id)}>
-                        ×
-                      </Button>
+                <AnimatePresence>
+                  {cartItems.map((i) => (
+                    <motion.div 
+                      key={i.id} 
+                      layout
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      className="flex justify-between border p-3 rounded-lg"
+                    >
+                      <span>{i.name}</span>
+                      <div className="flex gap-2 items-center">
+                        <Button size="icon" variant="outline" onClick={() => updateQuantity(i.id, -1)}>
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span>{i.quantity}</span>
+                        <Button size="icon" variant="outline" onClick={() => updateQuantity(i.id, +1)}>
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                        <Button size="icon" variant="ghost" onClick={() => removeItem(i.id)}>
+                          ×
+                        </Button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+
+                {cartItems.length > 0 && (
+                  <>
+                    <div className="flex justify-between items-center border-t pt-3 pb-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={includeDelivery}
+                          onChange={(e) => setIncludeDelivery(e.target.checked)}
+                          className="rounded"
+                        />
+                        <span className="text-sm">Add Delivery</span>
+                      </label>
+                      {includeDelivery && <span className="text-sm">R {deliveryFee.toFixed(2)}</span>}
                     </div>
-                  </div>
-                ))}
+                    
+                    <div className="space-y-1 text-sm pb-2">
+                      <div className="flex justify-between">
+                        <span>Subtotal</span>
+                        <span>R {subtotal.toFixed(2)}</span>
+                      </div>
+                      {includeDelivery && (
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Delivery</span>
+                          <span>R {deliveryFee.toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
 
                 <div className="font-bold text-lg border-t pt-3 flex justify-between">
                   <span>Total</span>
@@ -345,15 +552,89 @@ const NewSale = () => {
               <CardHeader><CardTitle>Payment Method</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 <PaymentButton value="CASH" label="Cash" Icon={Banknote} />
-                <PaymentButton value="YOKO_WEBPOS" label="Card / Terminal" Icon={CreditCard} />
-                <PaymentButton value="PAYMENT_LINK" label="Payment Link" Icon={Link2} />
+                <PaymentButton 
+                  value="PAYMENT_LINK" 
+                  label="Payment Link" 
+                  Icon={Link2} 
+                  disabled={customerId === 'none'}
+                  disabledReason="Select customer"
+                />
+                
+                <AnimatePresence>
+                  {paymentMethod && <AutoInvoiceToggle />}
+                </AnimatePresence>
               </CardContent>
             </Card>
 
-            <Button className="w-full" disabled={!canCheckout} onClick={handleCheckout}>
-              Complete Sale — R {total.toFixed(2)}
+            <Button className="w-full" disabled={!canCheckout || isProcessing} onClick={handleCheckout}>
+              {isProcessing ? 'Processing...' : `Complete Sale — R ${total.toFixed(2)}`}
             </Button>
           </div>
+        </div>
+
+        {/* MOBILE: Customer & Event Cards */}
+        <div className="lg:hidden space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Customer (Optional)</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Select value={customerId} onValueChange={setCustomerId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select customer" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No customer</SelectItem>
+                  {customers?.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.first_name} {c.last_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {selectedCustomer && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-xs text-muted-foreground"
+                >
+                  {selectedCustomer.email ? (
+                    <span className="flex items-center gap-1 text-green-600">
+                      <Mail className="h-3 w-3" /> {selectedCustomer.email}
+                    </span>
+                  ) : (
+                    <span className="text-amber-600">No email - invoice cannot be sent</span>
+                  )}
+                </motion.div>
+              )}
+
+              <Button variant="outline" onClick={() => setShowCustomerModal(true)} size="sm">
+                <Plus className="h-4 w-4 mr-1" /> Add Customer
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Event (Optional)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Select value={eventId} onValueChange={setEventId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select event" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No event</SelectItem>
+                  {events?.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name} - {new Date(e.event_date).toLocaleDateString()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
         </div>
 
         {/* MOBILE TABS */}
@@ -404,23 +685,67 @@ const NewSale = () => {
                   {cartItems.length === 0 && (
                     <p className="text-sm text-muted-foreground">Cart is empty</p>
                   )}
-                  {cartItems.map((i) => (
-                    <div key={i.id} className="flex justify-between border p-3 rounded-lg">
-                      <span>{i.name}</span>
-                      <div className="flex gap-2 items-center">
-                        <Button size="icon" variant="outline" onClick={() => updateQuantity(i.id, -1)}>
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <span>{i.quantity}</span>
-                        <Button size="icon" variant="outline" onClick={() => updateQuantity(i.id, +1)}>
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                        <Button size="icon" variant="ghost" onClick={() => removeItem(i.id)}>
-                          ×
-                        </Button>
+                  <AnimatePresence>
+                    {cartItems.map((i) => (
+                      <motion.div 
+                        key={i.id} 
+                        layout
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="flex justify-between border p-3 rounded-lg"
+                      >
+                        <span>{i.name}</span>
+                        <div className="flex gap-2 items-center">
+                          <Button size="icon" variant="outline" onClick={() => updateQuantity(i.id, -1)}>
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <span>{i.quantity}</span>
+                          <Button size="icon" variant="outline" onClick={() => updateQuantity(i.id, +1)}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                          <Button size="icon" variant="ghost" onClick={() => removeItem(i.id)}>
+                            ×
+                          </Button>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+
+                  {cartItems.length > 0 && (
+                    <>
+                      <div className="flex justify-between items-center border-t pt-3 pb-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeDelivery}
+                            onChange={(e) => setIncludeDelivery(e.target.checked)}
+                            className="rounded"
+                          />
+                          <span className="text-sm">Add Delivery</span>
+                        </label>
+                        {includeDelivery && <span className="text-sm">R {deliveryFee.toFixed(2)}</span>}
                       </div>
-                    </div>
-                  ))}
+                      
+                      <div className="space-y-1 text-sm pb-2">
+                        <div className="flex justify-between">
+                          <span>Subtotal</span>
+                          <span>R {subtotal.toFixed(2)}</span>
+                        </div>
+                        {includeDelivery && (
+                          <div className="flex justify-between text-muted-foreground">
+                            <span>Delivery</span>
+                            <span>R {deliveryFee.toFixed(2)}</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="font-bold text-lg border-t pt-3 flex justify-between">
+                        <span>Total</span>
+                        <span>R {total.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
 
@@ -428,8 +753,17 @@ const NewSale = () => {
                 <CardHeader><CardTitle>Payment Method</CardTitle></CardHeader>
                 <CardContent className="space-y-2">
                   <PaymentButton value="CASH" label="Cash" Icon={Banknote} />
-                  <PaymentButton value="YOKO_WEBPOS" label="Card / Terminal" Icon={CreditCard} />
-                  <PaymentButton value="PAYMENT_LINK" label="Payment Link" Icon={Link2} />
+                  <PaymentButton 
+                    value="PAYMENT_LINK" 
+                    label="Payment Link" 
+                    Icon={Link2} 
+                    disabled={customerId === 'none'}
+                    disabledReason="Select customer"
+                  />
+                  
+                  <AnimatePresence>
+                    {paymentMethod && <AutoInvoiceToggle />}
+                  </AnimatePresence>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -446,24 +780,7 @@ const NewSale = () => {
         {/* Modals */}
         <AddCustomerModal open={showCustomerModal} onOpenChange={setShowCustomerModal} />
 
-        {showTerminalModal && currentOrderId && (
-          <ProcessingModal
-            isOpen
-            amount={total}
-            orderNumber={currentOrderNumber || undefined}
-            onConfirm={async () => {
-              await processPayment.mutateAsync({
-                order_id: currentOrderId,
-                payment_method: 'YOKO_WEBPOS',
-                amount: total,
-                manual_terminal_confirmation: true,
-              });
-              navigate(`/payment/success?orderId=${currentOrderId}`);
-            }}
-            onCancel={() => setShowTerminalModal(false)}
-            isProcessing={processPayment.isPending}
-          />
-        )}
+        {isProcessing && <LoadingOverlay message="Processing sale..." />}
       </div>
     </AppLayout>
   );

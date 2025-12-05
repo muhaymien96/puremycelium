@@ -65,6 +65,8 @@ serve(async (req) => {
       discount_amount,
       tax_amount,
       notes,
+      delivery_fee,
+      transaction_datetime,
     } = body as {
       customer_id?: string | null;
       market_event_id?: string | null;
@@ -72,6 +74,8 @@ serve(async (req) => {
       discount_amount?: number;
       tax_amount?: number;
       notes?: string;
+      delivery_fee?: number;
+      transaction_datetime?: string;
     };
 
     // --- Basic validation ---
@@ -102,7 +106,7 @@ serve(async (req) => {
     }, 0);
 
     const totalAmount =
-      itemsTotal + (Number(tax_amount) || 0) - (Number(discount_amount) || 0);
+      itemsTotal + (Number(tax_amount) || 0) - (Number(discount_amount) || 0) + (Number(delivery_fee) || 0);
 
     // --- Order number ---
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
@@ -112,6 +116,7 @@ serve(async (req) => {
     const order_number = `ORD-${dateStr}-${randomSuffix}`;
 
     // --- Create order row ---
+    const orderDate = transaction_datetime ? new Date(transaction_datetime) : new Date();
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert({
@@ -121,9 +126,12 @@ serve(async (req) => {
         total_amount: totalAmount,
         discount_amount: discount_amount || 0,
         tax_amount: tax_amount || 0,
+        delivery_fee: delivery_fee || 0,
         status: "pending",
         notes,
         created_by: user.id,
+        transaction_datetime: orderDate.toISOString(),
+        created_at: orderDate.toISOString(),
       })
       .select()
       .single();

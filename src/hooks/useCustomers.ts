@@ -1,20 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import type { Tables } from '@/integrations/supabase/types';
 
-export interface Customer {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email?: string;
-  phone?: string;
-  preferred_channel?: string;
-  address?: string;
-  city?: string;
-  country?: string;
-  postal_code?: string;
-  notes?: string;
-}
+export type Customer = Tables<"customers">;
+
 
 export const useCustomers = () => {
   return useQuery({

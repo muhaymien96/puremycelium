@@ -1,16 +1,17 @@
 import { Card, CardContent } from '@/components/ui/card';
-import { useDashboardStats, useOrders } from '@/hooks/useOrders';
+import { useDashboardStats } from '@/hooks/useOrders';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { EmptyState } from '@/components/EmptyState';
-import { ShoppingBag, FileText, BarChart2, Users } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { TopSellers } from '@/components/TopSellers';
+import { LowStockAlert } from '@/components/LowStockAlert';
+import { TodaysSalesSummary } from '@/components/TodaysSalesSummary';
+import { UpcomingEvents } from '@/components/UpcomingEvents';
+import { QuickExpenseForm } from '@/components/QuickExpenseForm';
+import { TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 
 const Dashboard = () => {
-  const navigate = useNavigate();
   const { data: stats, isLoading: loadingStats } = useDashboardStats();
-  const { data: recentOrders, isLoading: loadingOrders } = useOrders();
 
   const formatCurrency = (value: number | undefined | null) =>
     `R ${(Number(value || 0)).toFixed(2)}`;
@@ -26,7 +27,6 @@ const Dashboard = () => {
       scale: 1,
       transition: { delay: i * 0.05, duration: 0.25 }
     }),
-    tap: { scale: 0.98 }
   };
 
   // Each KPI card
@@ -41,25 +41,24 @@ const Dashboard = () => {
       custom={index}
       initial="hidden"
       animate="visible"
-      whileTap="tap"
       variants={cardAnim}
     >
       <Card
-        className={`rounded-xl border shadow-sm hover:shadow-md transition-all ${color}`}
+        className={`rounded-xl border shadow-sm hover:shadow-md transition-all min-h-[80px] md:min-h-[100px] ${color}`}
       >
-        <CardContent className="pt-5 pb-4">
-          <p className="text-[11px] text-muted-foreground">{label}</p>
+        <CardContent className="pt-3 pb-2 px-3 md:pt-5 md:pb-4 md:px-4">
+          <p className="text-[9px] md:text-[11px] text-muted-foreground truncate">{label}</p>
 
           {loadingStats ? (
-            <Skeleton className="h-7 w-24 mt-2" />
+            <Skeleton className="h-5 md:h-7 w-16 md:w-24 mt-1 md:mt-2" />
           ) : (
-            <p className="text-2xl md:text-3xl font-bold mt-1 leading-tight">
+            <p className="text-base md:text-2xl lg:text-3xl font-bold mt-0.5 md:mt-1 leading-tight truncate">
               {value}
             </p>
           )}
 
           {sub && !loadingStats && (
-            <p className="text-[10px] text-muted-foreground mt-1">{sub}</p>
+            <p className="text-[8px] md:text-[10px] text-muted-foreground mt-0.5 md:mt-1 truncate">{sub}</p>
           )}
         </CardContent>
       </Card>
@@ -76,35 +75,7 @@ const Dashboard = () => {
 
   return (
     <AppLayout>
-      {/* Mobile Quick Navs */}
-      <div className="fixed z-30 left-0 right-0 top-0 md:hidden bg-white border-b border-slate-200 flex justify-around items-center h-14 shadow-sm">
-        <button
-          className="flex flex-col items-center justify-center text-xs text-muted-foreground hover:text-primary focus:text-primary transition px-2"
-          onClick={() => navigate('/invoices')}
-          aria-label="Go to Invoices"
-        >
-          <FileText className="h-5 w-5 mb-0.5" />
-          Invoices
-        </button>
-        <button
-          className="flex flex-col items-center justify-center text-xs text-muted-foreground hover:text-primary focus:text-primary transition px-2"
-          onClick={() => navigate('/reports')}
-          aria-label="Go to Reports"
-        >
-          <BarChart2 className="h-5 w-5 mb-0.5" />
-          Reports
-        </button>
-        <button
-          className="flex flex-col items-center justify-center text-xs text-muted-foreground hover:text-primary focus:text-primary transition px-2"
-          onClick={() => navigate('/customers')}
-          aria-label="Go to Customers"
-        >
-          <Users className="h-5 w-5 mb-0.5" />
-          Customers
-        </button>
-      </div>
-
-      <div className="p-4 md:p-6 space-y-6 pb-24 pt-16 md:pt-0">
+      <div className="p-4 md:p-6 space-y-6 pb-24 md:pb-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 6 }}
@@ -120,16 +91,17 @@ const Dashboard = () => {
         {/* Primary KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
           <KPI_Card
-            label="Net Revenue"
+            label="Revenue"
             value={formatCurrency(stats?.netRevenue)}
-            sub="After completed refunds"
+            sub="After refunds"
             index={0}
           />
           <KPI_Card
-            label="Gross Sales"
-            value={formatCurrency(stats?.totalSales)}
-            sub="Before refunds"
+            label="Gross Profit"
+            value={formatCurrency(stats?.totalProfit)}
+            sub="Revenue minus COGS"
             index={1}
+            color={(stats?.totalProfit || 0) >= 0 ? "" : "border-red-300 bg-red-50"}
           />
           <KPI_Card
             label="Refunds"
@@ -142,6 +114,7 @@ const Dashboard = () => {
             value={formatPercent(stats?.profitMargin)}
             sub="Based on financials"
             index={3}
+            color={(stats?.profitMargin || 0) >= 20 ? "border-green-300 bg-green-50" : (stats?.profitMargin || 0) >= 0 ? "" : "border-red-300 bg-red-50"}
           />
         </div>
 
@@ -170,64 +143,18 @@ const Dashboard = () => {
           />
         </div>
 
-        {/* Recent Orders */}
-        <Card>
-          <CardContent className="pt-6">
-            <h3 className="font-semibold mb-4">Recent Orders</h3>
-
-            {loadingOrders ? (
-              <div className="space-y-2">
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-16 w-full" />
-              </div>
-            ) : recentOrders && recentOrders.length > 0 ? (
-              <div className="space-y-3">
-                {recentOrders.map((order: any, idx: number) => (
-                  <motion.div
-                    key={order.id}
-                    custom={idx}
-                    initial="hidden"
-                    animate="visible"
-                    whileTap="tap"
-                    variants={cardAnim}
-                    className="border rounded-lg p-3 bg-white hover:bg-muted/50 transition cursor-pointer"
-                    onClick={() => navigate('/orders')}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-semibold">{order.order_number}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {order.customers
-                            ? `${order.customers.first_name} ${order.customers.last_name}`
-                            : 'Walk-in Customer'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(order.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold">
-                          {formatCurrency(order.total_amount)}
-                        </p>
-                        <p className="text-xs text-muted-foreground capitalize">
-                          {order.status}
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={ShoppingBag}
-                title="No orders yet"
-                description="Start making sales to see activity"
-                actionLabel="New Sale"
-                onAction={() => navigate('/sale')}
-              />
-            )}
-          </CardContent>
-        </Card>
+        {/* Analytics Widgets Grid */}
+        <div className="grid lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2">
+            <TopSellers />
+          </div>
+          <div className="space-y-4">
+            <TodaysSalesSummary />
+            <QuickExpenseForm />
+            <UpcomingEvents />
+            <LowStockAlert />
+          </div>
+        </div>
 
       </div>
     </AppLayout>

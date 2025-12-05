@@ -105,7 +105,7 @@ const Index = () => {
           <a href="/support" className="hover:text-primary transition">Support</a>
           <a href="/about" className="hover:text-primary transition">About</a>
         </div>
-        <div className="text-xsA\Z">&copy; {new Date().getFullYear()} PureMycelium. All rights reserved.</div>
+        <div className="text-xsA\Z">&copy; {new Date().getFullYear()} Mycelia. All rights reserved.</div>
       </footer>
     </div>
   );

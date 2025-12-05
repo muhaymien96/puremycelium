@@ -43,10 +43,10 @@ serve(async (req) => {
       );
     }
 
-    // Verify order exists and get details with batch info
+    // Verify order exists and get details with product cost info
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('*, order_items(product_id, batch_id, quantity, unit_price, product_batches(cost_per_unit))')
+      .select('*, order_items(product_id, batch_id, quantity, unit_price, products(cost_price, unit_price))')
       .eq('id', order_id)
       .single();
 
@@ -58,8 +58,8 @@ serve(async (req) => {
       );
     }
 
-    // CASH Payment Flow or Manual Terminal Confirmation
-    if (payment_method === 'CASH' || (payment_method === 'YOKO_WEBPOS' && manual_terminal_confirmation)) {
+    // CASH Payment Flow or Manual Terminal Confirmation (including marking PAYMENT_LINK as paid)
+    if (payment_method === 'CASH' || ((payment_method === 'YOKO_WEBPOS' || payment_method === 'PAYMENT_LINK') && manual_terminal_confirmation)) {
       // Update order status to confirmed
       const { error: updateError } = await supabase
         .from('orders')
@@ -74,26 +74,86 @@ serve(async (req) => {
         );
       }
 
-      // Create payment record
-      const { data: payment, error: paymentError } = await supabase
-        .from('payments')
-        .insert({
-          order_id,
-          amount,
-          payment_method: payment_method,
-          payment_status: 'completed',
-          created_by: user.id,
-          notes: manual_terminal_confirmation ? 'Manual terminal confirmation' : (metadata?.notes || null)
-        })
-        .select()
-        .single();
+      // For manual confirmation, check if there's an existing pending payment to update
+      let payment;
+      if (manual_terminal_confirmation) {
+        // Try to find and update existing pending payment
+        const { data: existingPayment, error: findError } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('order_id', order_id)
+          .eq('payment_method', payment_method)
+          .eq('payment_status', 'pending')
+          .maybeSingle();
 
-      if (paymentError) {
-        console.error('Error creating payment:', paymentError);
-        return new Response(
-          JSON.stringify({ error: 'Failed to create payment record' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        if (existingPayment) {
+          // Update existing pending payment to completed
+          const { data: updatedPayment, error: updatePaymentError } = await supabase
+            .from('payments')
+            .update({
+              payment_status: 'completed',
+              notes: 'Manually marked as paid'
+            })
+            .eq('id', existingPayment.id)
+            .select()
+            .single();
+
+          if (updatePaymentError) {
+            console.error('Error updating payment:', updatePaymentError);
+            return new Response(
+              JSON.stringify({ error: 'Failed to update payment record' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          payment = updatedPayment;
+          console.log(`✅ Updated existing pending payment ${existingPayment.id} to completed`);
+        } else {
+          // Create new payment record if no pending payment exists
+          const { data: newPayment, error: paymentError } = await supabase
+            .from('payments')
+            .insert({
+              order_id,
+              amount,
+              payment_method: payment_method,
+              payment_status: 'completed',
+              created_by: user.id,
+              notes: 'Manual terminal confirmation'
+            })
+            .select()
+            .single();
+
+          if (paymentError) {
+            console.error('Error creating payment:', paymentError);
+            return new Response(
+              JSON.stringify({ error: 'Failed to create payment record' }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          payment = newPayment;
+        }
+      } else {
+        // Create new payment record for regular CASH payments
+        const { data: newPayment, error: paymentError } = await supabase
+          .from('payments')
+          .insert({
+            order_id,
+            amount,
+            payment_method: payment_method,
+            payment_status: 'completed',
+            created_by: user.id,
+            notes: metadata?.notes || null
+          })
+          .select()
+          .single();
+
+        if (paymentError) {
+          console.error('Error creating payment:', paymentError);
+          return new Response(
+            JSON.stringify({ error: 'Failed to create payment record' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        payment = newPayment;
       }
 
       // Decrement stock for all order items
@@ -114,9 +174,11 @@ serve(async (req) => {
             console.log(`✅ Decremented batch ${item.batch_id} by ${qty}`);
           }
 
-          // Calculate cost from batch
-          const costPerUnit = item.product_batches?.cost_per_unit || 0;
-          totalCost += qty * Number(costPerUnit);
+          // Calculate cost with fallback chain: product cost -> estimated (60% of price)
+          const productCost = item.products?.cost_price;
+          const estimatedCost = Number(item.products?.unit_price || item.unit_price) * 0.6;
+          const costPerUnit = Number(productCost || estimatedCost || 0);
+          totalCost += qty * costPerUnit;
         } else if (!item.batch_id) {
           console.warn(`Order item for product ${item.product_id} has no batch_id; stock not decremented`);
         }
@@ -145,7 +207,8 @@ serve(async (req) => {
           cost: totalCost,
           profit: profit,
           payment_method: payment_method,
-          notes: `Sale completed via ${payment_method}`
+          notes: `Sale completed via ${payment_method}`,
+          transaction_at: new Date().toISOString()
         });
 
         console.log(`✅ Recorded financial transaction: Revenue ${amount}, Cost ${totalCost}, Profit ${profit}`);
@@ -154,28 +217,60 @@ serve(async (req) => {
         // Don't fail the payment, just log the error
       }
 
-      // Generate invoice (paid for cash/terminal)
-      const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
-      const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
-
-      const { data: invoice, error: invoiceError } = await supabase
+      // Check if an invoice already exists for this order (e.g., from payment link flow)
+      const { data: existingInvoice } = await supabase
         .from('invoices')
-        .insert({
-          invoice_number,
-          order_id,
-          customer_id: order.customer_id,
-          total_amount: order.total_amount,
-          tax_amount: order.tax_amount,
-          paid_amount: amount,
-          status: 'paid',
-          created_by: user.id
-        })
-        .select()
-        .single();
+        .select('*')
+        .eq('order_id', order_id)
+        .maybeSingle();
 
-      if (invoiceError) {
-        console.error('Error creating invoice:', invoiceError);
+      let invoice;
+      if (existingInvoice) {
+        // Update existing invoice to paid
+        const { data: updatedInvoice, error: updateInvoiceError } = await supabase
+          .from('invoices')
+          .update({
+            paid_amount: amount,
+            status: 'paid'
+          })
+          .eq('id', existingInvoice.id)
+          .select()
+          .single();
+
+        if (updateInvoiceError) {
+          console.error('Error updating invoice:', updateInvoiceError);
+        } else {
+          invoice = updatedInvoice;
+          console.log(`✅ Updated existing invoice ${existingInvoice.invoice_number} to paid`);
+        }
       } else {
+        // Generate new invoice (paid for cash/terminal)
+        const { data: invoiceNumberData } = await supabase.rpc('generate_invoice_number');
+        const invoice_number = invoiceNumberData || `INV-${Date.now()}`;
+
+        const { data: newInvoice, error: invoiceError } = await supabase
+          .from('invoices')
+          .insert({
+            invoice_number,
+            order_id,
+            customer_id: order.customer_id,
+            total_amount: order.total_amount,
+            tax_amount: order.tax_amount,
+            paid_amount: amount,
+            status: 'paid',
+            created_by: user.id
+          })
+          .select()
+          .single();
+
+        if (invoiceError) {
+          console.error('Error creating invoice:', invoiceError);
+        } else {
+          invoice = newInvoice;
+        }
+      }
+
+      if (invoice) {
         // Trigger PDF generation & sending
         try {
           await supabase.functions.invoke('generate-invoice-pdf', {

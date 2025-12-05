@@ -37,7 +37,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { order_id, customer_email, amount } = body;
+    const { order_id, customer_email, amount, business_profile_id } = body;
 
     if (!order_id || !customer_email || amount === undefined) {
       return new Response(
@@ -67,6 +67,29 @@ serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Fetch business settings for branding
+    let businessSettings;
+    if (business_profile_id) {
+      const { data } = await supabase
+        .from('business_settings')
+        .select('*')
+        .eq('id', business_profile_id)
+        .single();
+      businessSettings = data;
+    } else {
+      // Fall back to default profile
+      const { data } = await supabase
+        .from('business_settings')
+        .select('*')
+        .eq('is_default', true)
+        .single();
+      businessSettings = data;
+    }
+
+    const businessName = businessSettings?.business_name || 'Business';
+    const businessEmail = businessSettings?.email || '';
+    const businessLogo = businessSettings?.logo_url || '';
 
     // Create Yoco checkout
     const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://yxjygrsmxrsmdzubzpsj.lovable.app';
@@ -136,7 +159,8 @@ serve(async (req) => {
       tax_amount: order.tax_amount,
       paid_amount: 0,
       status: 'unpaid', // Keep unpaid until payment received
-      created_by: user.id
+      created_by: user.id,
+      business_profile_id: business_profile_id || null
     })
     .select()
     .single();
@@ -150,7 +174,10 @@ serve(async (req) => {
     if (invoice) {
       try {
         const pdfResponse = await supabase.functions.invoke('generate-invoice-pdf', {
-          body: { invoice_id: invoice.id }
+          body: { 
+            invoice_id: invoice.id,
+            business_profile_id: business_profile_id 
+          }
         });
         if (pdfResponse.data?.pdf_url) {
           invoicePdfUrl = pdfResponse.data.pdf_url;
@@ -167,14 +194,15 @@ serve(async (req) => {
 
     try {
       const emailResponse = await resend.emails.send({
-        from: "PureMycelium <invoices@resend.dev>",
+        from: `${businessName} <info@puremycelium.co.za>`,
         to: [customer_email],
-        subject: `Invoice ${invoice_number} - PureMycelium`,
+        subject: `Invoice ${invoice_number} from ${businessName}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #2c5f2d; margin: 0;">🍄 PureMycelium</h1>
-              <p style="color: #666; margin: 5px 0;">Premium Honey & Gourmet Mushrooms</p>
+              ${businessLogo ? `<img src="${businessLogo}" alt="${businessName}" style="max-height: 60px; max-width: 200px; margin-bottom: 10px;" />` : ''}
+              <h1 style="color: #2c5f2d; margin: 0;">${businessName}</h1>
+              ${businessEmail ? `<p style="color: #666; margin: 5px 0;">${businessEmail}</p>` : ''}
             </div>
 
             <h2 style="color: #333; border-bottom: 2px solid #2c5f2d; padding-bottom: 10px;">Invoice</h2>
@@ -237,8 +265,7 @@ serve(async (req) => {
             <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;" />
             
             <p style="color: #999; font-size: 12px; text-align: center;">
-              This payment link is secure and provided by Yoco.<br>
-              PureMycelium - Bringing nature's finest to your table.
+              This payment link is secure and provided by Yoco.
             </p>
           </div>
         `,

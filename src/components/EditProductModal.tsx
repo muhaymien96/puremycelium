@@ -26,7 +26,7 @@ export function EditProductModal({ open, onOpenChange, product }: EditProductMod
         name: product.name,
         category: product.category,
         unit_price: product.unit_price,
-        // ...existing code...
+        cost_price: product.cost_price || '',
         description: product.description || '',
         sku: product.sku || '',
         unit_of_measure: product.unit_of_measure || 'unit',
@@ -44,7 +44,7 @@ export function EditProductModal({ open, onOpenChange, product }: EditProductMod
           name: data.name,
           category: data.category,
           unit_price: parseFloat(data.unit_price),
-          // ...existing code...
+          cost_price: data.cost_price ? parseFloat(data.cost_price) : null,
           description: data.description,
           sku: data.sku,
           unit_of_measure: data.unit_of_measure,
@@ -115,26 +115,41 @@ export function EditProductModal({ open, onOpenChange, product }: EditProductMod
                 <p className="text-sm text-destructive">{errors.unit_price.message as string}</p>
               )}
             </div>
-            {/* Cost price removed: cost is now batch-level only */}
 
             <div className="space-y-2">
-              <Label htmlFor="unit_of_measure">Unit of Measure</Label>
-              <Select
-                value={watch('unit_of_measure')}
-                onValueChange={(value) => setValue('unit_of_measure', value)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select unit" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unit">Unit</SelectItem>
-                  <SelectItem value="kg">Kilogram</SelectItem>
-                  <SelectItem value="g">Gram</SelectItem>
-                  <SelectItem value="l">Liter</SelectItem>
-                  <SelectItem value="ml">Milliliter</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="cost_price">Cost Price (R)</Label>
+              <Input
+                id="cost_price"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                {...register('cost_price', {
+                  min: { value: 0, message: 'Cost must be positive' },
+                })}
+              />
+              {errors.cost_price && (
+                <p className="text-sm text-destructive">{errors.cost_price.message as string}</p>
+              )}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="unit_of_measure">Unit of Measure</Label>
+            <Select
+              value={watch('unit_of_measure')}
+              onValueChange={(value) => setValue('unit_of_measure', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select unit" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unit">Unit</SelectItem>
+                <SelectItem value="kg">Kilogram</SelectItem>
+                <SelectItem value="g">Gram</SelectItem>
+                <SelectItem value="l">Liter</SelectItem>
+                <SelectItem value="ml">Milliliter</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

@@ -8,18 +8,21 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
-  const { user, isLoading, isAdmin } = useAuth();
+  const { user, isLoading, isAdmin, hasAnyRole } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!isLoading) {
       if (!user) {
         navigate('/auth');
+      } else if (!hasAnyRole) {
+        // User has no role assigned, redirect to pending approval
+        navigate('/pending-approval');
       } else if (requireAdmin && !isAdmin) {
         navigate('/dashboard');
       }
     }
-  }, [user, isLoading, isAdmin, requireAdmin, navigate]);
+  }, [user, isLoading, isAdmin, hasAnyRole, requireAdmin, navigate]);
 
   if (isLoading) {
     return (
@@ -32,7 +35,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
     );
   }
 
-  if (!user || (requireAdmin && !isAdmin)) {
+  if (!user || !hasAnyRole || (requireAdmin && !isAdmin)) {
     return null;
   }
 

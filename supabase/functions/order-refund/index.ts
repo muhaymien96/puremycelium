@@ -123,6 +123,7 @@ serve(async (req) => {
           profit: -(saleTx.profit * fraction),
           notes: reason || "Refund",
           payment_method: saleTx.payment_method,
+          transaction_at: new Date().toISOString(),
         });
       }
     } catch (fErr) {

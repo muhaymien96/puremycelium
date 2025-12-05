@@ -1,13 +1,19 @@
 project_id = "acxhhfwvxtkvxkvmfiep"
 
+[functions.import-sales]
+verify_jwt = true
+
+[functions.rollback-import]
+verify_jwt = true
+
 [functions.yoco-webhook]
 verify_jwt = false
 
 [functions.generate-invoice-pdf]
-verify_jwt = true
+verify_jwt = false
 
 [functions.send-invoice]
-verify_jwt = true
+verify_jwt = false
 
 [functions.send-payment-link]
 verify_jwt = true
@@ -28,4 +34,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.product-batches]
+verify_jwt = true
+
+[functions.backfill-cogs]
 verify_jwt = true

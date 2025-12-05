@@ -4,9 +4,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Clock, XCircle } from 'lucide-react';
+import { RefreshCw, Clock, XCircle, FileText, Send } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useProcessPayment } from '@/hooks/useOrders';
+import { useProcessPayment, useSendPaymentLink } from '@/hooks/useOrders';
+import { useGenerateInvoice } from '@/hooks/useGenerateInvoice';
 
 import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -32,6 +33,8 @@ interface OrderDetailModalProps {
 
 export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalProps) {
   const processPayment = useProcessPayment();
+  const generateInvoice = useGenerateInvoice();
+  const sendPaymentLink = useSendPaymentLink();
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const queryClient = useQueryClient();
@@ -73,6 +76,22 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
     enabled: isOpen && !!orderId,
   });
 
+  // Check if invoice exists for this order
+  const { data: invoice } = useQuery({
+    queryKey: ['invoice-for-order', orderId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, pdf_url')
+        .eq('order_id', orderId)
+        .maybeSingle();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: isOpen && !!orderId,
+  });
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
@@ -104,6 +123,8 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
         return 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20';
       case 'failed':
         return 'bg-red-500/10 text-red-600 border-red-500/20';
+      case 'expired':
+        return 'bg-gray-500/10 text-gray-600 border-gray-500/20';
       case 'refunded':
         return 'bg-purple-500/10 text-purple-600 border-purple-500/20';
       default:
@@ -138,6 +159,23 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
         .eq('id', orderId);
 
       if (statusError) throw statusError;
+
+      // Cancel any pending/unpaid invoices
+      await supabase
+        .from('invoices')
+        .update({ status: 'cancelled' })
+        .eq('order_id', orderId)
+        .in('status', ['unpaid', 'pending']);
+
+      // Mark any pending payments as failed (order was cancelled before payment)
+      await supabase
+        .from('payments')
+        .update({ 
+          payment_status: 'failed',
+          notes: 'Order cancelled before payment'
+        })
+        .eq('order_id', orderId)
+        .eq('payment_status', 'pending');
 
       // Add to status history
       const { error: historyError } = await supabase
@@ -225,10 +263,15 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
                     {order.order_items?.map((item: any) => (
                       <div key={item.id} className="flex justify-between items-start p-3 rounded-lg bg-muted/50">
                         <div>
-                          <p className="font-medium">{item.products?.name}</p>
+                          <p className="font-medium">{item.products?.name || item.product_name || 'Unknown Product'}</p>
                           <p className="text-sm text-muted-foreground">
                             Qty: {Number(item.quantity)} × R{Number(item.unit_price).toFixed(2)}
                           </p>
+                          {(item.products?.sku || item.product_sku) && (
+                            <p className="text-xs text-muted-foreground">
+                              SKU: {item.products?.sku || item.product_sku}
+                            </p>
+                          )}
                           {item.product_batches && (
                             <p className="text-xs text-muted-foreground">
                               Batch: {item.product_batches.batch_number}
@@ -287,6 +330,9 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
                             <p className="text-xs text-muted-foreground">
                               {new Date(payment.created_at).toLocaleString()}
                             </p>
+                            {payment.notes && (
+                              <p className="text-xs text-muted-foreground mt-1">{payment.notes}</p>
+                            )}
                           </div>
                           <div className="text-right">
                             <p className="font-semibold">R{Number(payment.amount).toFixed(2)}</p>
@@ -302,10 +348,10 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
                                 onClick={() => {
                                   processPayment.mutate(
                                     {
-                                      mark_as_paid: true,
                                       order_id: order.id,
-                                      payment_id: payment.id,
-                                      amount: payment.amount,
+                                      payment_method: payment.payment_method || 'CASH',
+                                      amount: Number(payment.amount),
+                                      manual_terminal_confirmation: true,
                                     },
                                     {
                                       onSuccess: () => {
@@ -320,6 +366,38 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
                                 }}
                               >
                                 Mark as Paid
+                              </Button>
+                            )}
+                            {/* Resend Payment Link for failed/expired PAYMENT_LINK payments */}
+                            {(payment.payment_status === 'failed' || payment.payment_status === 'expired') && 
+                             payment.payment_method === 'PAYMENT_LINK' && 
+                             order.customers?.email && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="ml-2 mt-2"
+                                disabled={sendPaymentLink.isPending}
+                                onClick={() => {
+                                  sendPaymentLink.mutate(
+                                    {
+                                      order_id: order.id,
+                                      customer_email: order.customers.email,
+                                      amount: order.total_amount,
+                                    },
+                                    {
+                                      onSuccess: () => {
+                                        toast.success('Payment link resent');
+                                        refetch();
+                                      },
+                                      onError: (err: any) => {
+                                        toast.error('Failed to resend payment link');
+                                      },
+                                    }
+                                  );
+                                }}
+                              >
+                                <Send className="h-3 w-3 mr-1" />
+                                Resend Link
                               </Button>
                             )}
                           </div>
@@ -361,6 +439,17 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
 
                 {/* Actions */}
                 <div className="space-y-2">
+                  {!invoice && (
+                    <Button
+                      onClick={() => generateInvoice.mutate(orderId)}
+                      variant="outline"
+                      className="w-full"
+                      disabled={generateInvoice.isPending}
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      {generateInvoice.isPending ? "Generating..." : "Generate Invoice"}
+                    </Button>
+                  )}
                   {canRefund && (
                     <Button
                       onClick={() => setShowRefundModal(true)}

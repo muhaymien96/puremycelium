@@ -5,10 +5,10 @@ export const useInventoryDashboard = () => {
   return useQuery({
     queryKey: ['inventory-dashboard'],
     queryFn: async () => {
-      // Get ACTIVE products with stock and cost_per_unit
+      // Get ACTIVE products with stock and product cost_price
       const { data: products, error: productsError } = await supabase
         .from('products')
-        .select('id, name, unit_price, is_active, product_batches(quantity, expiry_date, cost_per_unit)')
+        .select('id, name, unit_price, cost_price, is_active, product_batches(quantity, expiry_date)')
         .eq('is_active', true);
 
       if (productsError) throw productsError;
@@ -40,16 +40,21 @@ export const useInventoryDashboard = () => {
 
       const expiringCount = expiringBatches?.length || 0;
 
-      // Calculate total stock value (COST BASIS: batch cost_per_unit, fallback to 60% of retail)
+      // Helper to get cost per unit with fallback chain:
+      // 1. product.cost_price (product default)
+      // 2. 60% of unit_price (last resort estimate)
+      const getCostPerUnit = (product: any): number => {
+        if (product.cost_price != null && !isNaN(Number(product.cost_price)) && Number(product.cost_price) > 0) {
+          return Number(product.cost_price);
+        }
+        return Number(product.unit_price) * 0.6;
+      };
+
+      // Calculate total stock value (COST BASIS with improved fallback)
       const totalCostValue = products?.reduce((sum: number, p: any) => {
+        const costPerUnit = getCostPerUnit(p);
         const batchValue = p.product_batches?.reduce((s: number, b: any) => {
           const quantity = Number(b.quantity);
-          let costPerUnit = null;
-          if (b.cost_per_unit != null && !isNaN(Number(b.cost_per_unit))) {
-            costPerUnit = Number(b.cost_per_unit);
-          } else {
-            costPerUnit = Number(p.unit_price) * 0.6;
-          }
           return s + (quantity * costPerUnit);
         }, 0) || 0;
         return sum + batchValue;
@@ -64,15 +69,9 @@ export const useInventoryDashboard = () => {
       // Generate enhanced reorder suggestions with expiry analysis and priority
       const reorderSuggestions = products?.map((p: any) => {
         const currentStock = p.product_batches?.reduce((sum: number, b: any) => sum + Number(b.quantity), 0) || 0;
-        const avgCostPerUnit = p.product_batches?.length > 0
-          ? p.product_batches.reduce((sum: number, b: any) => {
-              if (b.cost_per_unit != null && !isNaN(Number(b.cost_per_unit))) {
-                return sum + Number(b.cost_per_unit);
-              } else {
-                return sum + (Number(p.unit_price) * 0.6);
-              }
-            }, 0) / p.product_batches.length
-          : Number(p.unit_price) * 0.6;
+        
+        // Use product cost_price with fallback to 60% of unit_price
+        const avgCostPerUnit = getCostPerUnit(p);
 
         // Check for expiring stock
         const expiringStockDate = new Date();

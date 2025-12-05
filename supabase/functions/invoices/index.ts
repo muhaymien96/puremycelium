@@ -127,6 +127,76 @@ serve(async (req) => {
       );
     }
 
+    // POST - Create invoice
+    if (req.method === 'POST') {
+      const body = await req.json();
+
+      const { data: invoice, error } = await supabase
+        .from('invoices')
+        .insert(body)
+        .select()
+        .single();
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify(invoice),
+        { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // PUT/PATCH - Update invoice
+    if (req.method === 'PUT' || req.method === 'PATCH') {
+      const invoiceId = pathSegments[pathSegments.length - 1];
+      const body = await req.json();
+
+      const { data: invoice, error } = await supabase
+        .from('invoices')
+        .update(body)
+        .eq('id', invoiceId)
+        .select()
+        .single();
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify(invoice),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // DELETE - Delete invoice
+    if (req.method === 'DELETE') {
+      const invoiceId = pathSegments[pathSegments.length - 1];
+
+      const { error } = await supabase
+        .from('invoices')
+        .delete()
+        .eq('id', invoiceId);
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ message: 'Invoice deleted successfully' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

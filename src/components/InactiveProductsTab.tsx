@@ -194,6 +194,7 @@ export function InactiveProductsTab() {
             }}
             productId={selectedProduct.id}
             productName={selectedProduct.name}
+            productSku={selectedProduct.sku}
           />
           <BatchHistoryModal
             open={showHistory}

@@ -95,10 +95,10 @@ serve(async (req) => {
         );
       }
 
-      // Get order details with batch cost info
+      // Get order details with product cost info
       const { data: order, error: orderError } = await supabase
         .from('orders')
-        .select('*, order_items(product_id, batch_id, quantity, unit_price, product_batches(cost_per_unit))')
+        .select('*, order_items(product_id, batch_id, quantity, unit_price, products(cost_price, unit_price))')
         .eq('id', order_id)
         .single();
 
@@ -148,9 +148,11 @@ serve(async (req) => {
             console.log(`✅ Decremented batch ${item.batch_id} by ${quantity}`);
           }
 
-          // Calculate cost from batch
-          const costPerUnit = item.product_batches?.cost_per_unit || 0;
-          totalCost += quantity * Number(costPerUnit);
+          // Calculate cost with fallback chain: product cost -> estimated (60% of price)
+          const productCost = item.products?.cost_price;
+          const estimatedCost = Number(item.products?.unit_price || item.unit_price) * 0.6;
+          const costPerUnit = Number(productCost || estimatedCost || 0);
+          totalCost += quantity * costPerUnit;
         }
 
         // Create stock movement (OUT) with positive quantity
@@ -177,7 +179,8 @@ serve(async (req) => {
           cost: totalCost,
           profit: profit,
           payment_method: 'PAYMENT_LINK',
-          notes: 'Sale completed via Yoco payment link'
+          notes: 'Sale completed via Yoco payment link',
+          transaction_at: new Date().toISOString()
         });
 
         console.log(`✅ Recorded financial transaction: Revenue ${amount}, Cost ${totalCost}, Profit ${profit}`);
@@ -188,26 +191,34 @@ serve(async (req) => {
       // Find existing invoice and update to paid
       const { data: existingInvoice } = await supabase
         .from('invoices')
-        .select('*')
+        .select('*, delivery_status, sent_at')
         .eq('order_id', order_id)
         .single();
 
       if (existingInvoice) {
+        // Check if receipt was already sent to prevent duplicates
+        const alreadySent = existingInvoice.delivery_status === 'sent' || existingInvoice.sent_at;
+        
         // Update existing invoice to paid
         await supabase.from('invoices').update({
           paid_amount: event.payload.amount / 100,
           status: 'paid'
         }).eq('id', existingInvoice.id);
 
-        // Regenerate PDF with "PAID" status
+        // Regenerate PDF with "PAID" status and send receipt only if not already sent
         try {
           await supabase.functions.invoke('generate-invoice-pdf', {
-            body: { invoice_id: existingInvoice.id }
+            body: { invoice_id: existingInvoice.id, is_receipt: true }
           });
 
-          await supabase.functions.invoke('send-invoice', {
-            body: { invoice_id: existingInvoice.id, send_receipt: true }
-          });
+          if (!alreadySent) {
+            await supabase.functions.invoke('send-invoice', {
+              body: { invoice_id: existingInvoice.id, send_receipt: true }
+            });
+            console.log(`✅ Receipt sent for invoice ${existingInvoice.id}`);
+          } else {
+            console.log(`⚠️ Receipt already sent for invoice ${existingInvoice.id}, skipping duplicate email`);
+          }
         } catch (error) {
           console.error('Error updating invoice:', error);
         }
@@ -231,7 +242,7 @@ serve(async (req) => {
         if (!invoiceError && invoice) {
           try {
             await supabase.functions.invoke('generate-invoice-pdf', {
-              body: { invoice_id: invoice.id }
+              body: { invoice_id: invoice.id, is_receipt: true }
             });
             await supabase.functions.invoke('send-invoice', {
               body: { invoice_id: invoice.id, send_receipt: true }
@@ -269,7 +280,7 @@ serve(async (req) => {
           try {
             const { data: orderItems } = await supabase
               .from('order_items')
-              .select('*, product_batches(cost_per_unit)')
+              .select('*')
               .eq('order_id', refund.orders.id);
 
             if (orderItems && orderItems.length > 0) {
@@ -332,7 +343,8 @@ serve(async (req) => {
                 cost: -(originalTx.cost * fraction),
                 profit: -(originalTx.profit * fraction),
                 payment_method: 'PAYMENT_LINK',
-                notes: `Yoco refund completed for order ${refund.orders.order_number}`
+                notes: `Yoco refund completed for order ${refund.orders.order_number}`,
+                transaction_at: new Date().toISOString()
               });
 
               console.log(`✅ Recorded financial reversal for Yoco refund ${refund_metadata.refund_id}`);
@@ -343,6 +355,60 @@ serve(async (req) => {
         }
 
         console.log(`✅ Refund completed: ${refund_metadata.refund_id}`);
+      }
+    }
+
+    // Handle payment.failed event - Mark payment as failed
+    if (event.type === 'payment.failed') {
+      const order_id = event.payload?.metadata?.order_id;
+      if (order_id) {
+        console.log(`Payment failed for order ${order_id}`);
+
+        // Update payment status to failed
+        await supabase
+          .from('payments')
+          .update({ 
+            payment_status: 'failed',
+            notes: `Payment failed: ${event.payload?.failureReason || 'Unknown reason'}`
+          })
+          .eq('order_id', order_id)
+          .eq('payment_status', 'pending');
+
+        // Note: We don't cancel the order automatically - customer may retry
+        // Stock was never decremented, so no restoration needed
+        console.log(`✅ Payment marked as failed for order ${order_id}`);
+      }
+    }
+
+    // Handle checkout.abandoned event - Customer didn't complete checkout
+    if (event.type === 'checkout.abandoned' || event.type === 'checkout.expired') {
+      const order_id = event.payload?.metadata?.order_id;
+      if (order_id) {
+        console.log(`Checkout ${event.type} for order ${order_id}`);
+
+        // Update payment status to expired/abandoned
+        await supabase
+          .from('payments')
+          .update({ 
+            payment_status: 'expired',
+            notes: `Payment link ${event.type === 'checkout.expired' ? 'expired' : 'abandoned'}`
+          })
+          .eq('order_id', order_id)
+          .eq('payment_status', 'pending');
+
+        // Update invoice status to expired
+        await supabase
+          .from('invoices')
+          .update({ 
+            status: 'expired',
+            notes: `Payment link ${event.type === 'checkout.expired' ? 'expired' : 'abandoned'}`
+          })
+          .eq('order_id', order_id)
+          .eq('status', 'unpaid');
+
+        // Note: Stock was never decremented for payment link orders
+        // The order stays pending - admin can manually cancel or resend link
+        console.log(`✅ Payment link marked as ${event.type} for order ${order_id}`);
       }
     }
 

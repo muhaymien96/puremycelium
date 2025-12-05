@@ -7,6 +7,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import PendingApproval from "./pages/PendingApproval";
 import Dashboard from "./pages/Dashboard";
 import NewSale from "./pages/NewSale";
 import Orders from "./pages/Orders";
@@ -14,12 +15,18 @@ import Inventory from "./pages/Inventory";
 import Customers from "./pages/Customers";
 import Invoices from "./pages/Invoices";
 import Reports from "./pages/Reports";
+import MarketEvents from "./pages/MarketEvents";
+import ImportSales from "./pages/ImportSales";
+import ImportHistory from "./pages/ImportHistory";
 import Admin from "./pages/Admin";
+import BusinessSettings from "./pages/BusinessSettings";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentCancel from "./pages/PaymentCancel";
 import PaymentFailure from "./pages/PaymentFailure";
 import PaymentProcessing from "./pages/PaymentProcessing";
 import CustomerDetail from "./pages/CustomerDetail";
+import Expenses from "./pages/Expenses";
+import UnmappedProducts from "./pages/UnmappedProducts";
 import NotFound from "./pages/NotFound";
 
 const App = () => (
@@ -32,14 +39,21 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/pending-approval" element={<PendingApproval />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/sale" element={<ProtectedRoute><NewSale /></ProtectedRoute>} />
             <Route path="/orders" element={<ProtectedRoute><Orders /></ProtectedRoute>} />
             <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
             <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
             <Route path="/invoices" element={<ProtectedRoute><Invoices /></ProtectedRoute>} />
-            <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+            <Route path="/expenses" element={<ProtectedRoute><Expenses /></ProtectedRoute>} />
+            <Route path="/reports" element={<ProtectedRoute requireAdmin><Reports /></ProtectedRoute>} />
+            <Route path="/events" element={<ProtectedRoute><MarketEvents /></ProtectedRoute>} />
+            <Route path="/import" element={<ProtectedRoute><ImportSales /></ProtectedRoute>} />
+            <Route path="/import-history" element={<ProtectedRoute><ImportHistory /></ProtectedRoute>} />
+            <Route path="/unmapped-products" element={<ProtectedRoute><UnmappedProducts /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute requireAdmin><Admin /></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute requireAdmin><BusinessSettings /></ProtectedRoute>} />
             <Route path="/payment/success" element={<PaymentSuccess />} />
             <Route path="/payment/cancel" element={<PaymentCancel />} />
             <Route path="/payment/failure" element={<PaymentFailure />} />

@@ -45,9 +45,8 @@ export const useOrders = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select("*, customers(first_name, last_name), order_items(*)")
-        .order("created_at", { ascending: false })
-        .limit(20);
+        .select("*, customers(first_name, last_name), order_items(*, products(name, sku)), external_source")
+        .order("created_at", { ascending: false });
 
       if (error) throw error;
       return data;
@@ -90,7 +89,10 @@ export const useProcessPayment = () => {
       return result;
     },
     onSuccess: () => {
+      // Ensure all dependent dashboards and inventory snapshots refresh after a sale
       queryClient.invalidateQueries();
+      queryClient.refetchQueries({ queryKey: ["inventory-dashboard"], type: "active" });
+      queryClient.refetchQueries({ queryKey: ["dashboard-stats"], type: "active" });
     },
     onError: () => toast.error("Payment failed"),
   });
@@ -179,7 +181,7 @@ export const useDashboardStats = () =>
         supabase
           .from("products")
           .select(
-            "id, unit_price, is_active, product_batches(quantity, expiry_date, cost_per_unit)"
+            "id, unit_price, is_active, product_batches(quantity, expiry_date)"
           )
           .eq("is_active", true),
       ]);
@@ -236,7 +238,13 @@ export const useDashboardStats = () =>
         netRevenue > 0 ? (netProfit / netRevenue) * 100 : 0;
 
       // Inventory snapshot (at cost + simple stock alerts)
-      const inventoryProducts = inventoryRes.data || [];
+      // Need to fetch products with cost_price for proper fallback
+      const { data: productsWithCost } = await supabase
+        .from("products")
+        .select("id, unit_price, cost_price, is_active, product_batches(quantity, expiry_date)")
+        .eq("is_active", true);
+
+      const inventoryProducts = productsWithCost || [];
       const LOW_STOCK_THRESHOLD = 10;
       const DAYS_TO_EXPIRY_WARNING = 30;
       const expiryCutoff = new Date();
@@ -255,10 +263,13 @@ export const useDashboardStats = () =>
           const qty = Number(b.quantity) || 0;
           productStock += qty;
 
-          const costPerUnit =
-            b.cost_per_unit != null && !isNaN(Number(b.cost_per_unit))
-              ? Number(b.cost_per_unit)
-              : Number(p.unit_price) * 0.6; // fallback if no batch cost
+          // Cost fallback chain: product.cost_price → unit_price * 0.6
+          let costPerUnit: number;
+          if (p.cost_price != null && !isNaN(Number(p.cost_price)) && Number(p.cost_price) > 0) {
+            costPerUnit = Number(p.cost_price);
+          } else {
+            costPerUnit = Number(p.unit_price) * 0.6;
+          }
 
           totalCostValue += qty * costPerUnit;
           totalRetailValue += qty * Number(p.unit_price);

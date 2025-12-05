@@ -49,6 +49,27 @@ serve(async (req) => {
       );
     }
 
+    // Fetch business profile for branding
+    let businessSettings;
+    if (invoice.business_profile_id) {
+      const { data } = await supabase
+        .from('business_settings')
+        .select('*')
+        .eq('id', invoice.business_profile_id)
+        .single();
+      businessSettings = data;
+    } else {
+      // Fall back to default profile
+      const { data } = await supabase
+        .from('business_settings')
+        .select('*')
+        .eq('is_default', true)
+        .single();
+      businessSettings = data;
+    }
+
+    const businessName = businessSettings?.business_name || 'Our Business';
+
     // Check if PDF exists
     if (!invoice.pdf_url) {
       console.error('Invoice PDF not generated yet');
@@ -122,15 +143,17 @@ serve(async (req) => {
 
       // Choose email template based on whether it's a receipt or invoice
       const isReceipt = send_receipt && invoice.status === 'paid';
+      const receiptNumber = invoice.invoice_number.replace(/^INV-/, '');
       const emailSubject = isReceipt 
-        ? `Payment Received - Thank You! (Invoice ${invoice.invoice_number})`
-        : `Invoice ${invoice.invoice_number} from PureMycelium`;
+        ? `Receipt REC-${receiptNumber} - Payment Received - ${businessName}`
+        : `Invoice ${invoice.invoice_number} - ${businessName}`;
       
       const emailHtml = isReceipt ? `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2c5f2d; margin: 0;">🍄 PureMycelium</h1>
-            <p style="color: #666; margin: 5px 0;">Premium Honey & Gourmet Mushrooms</p>
+            ${businessSettings?.logo_url ? `<img src="${businessSettings.logo_url}" alt="${businessName}" style="max-height: 60px; max-width: 200px; margin-bottom: 10px;" />` : ''}
+            <h1 style="color: #2c5f2d; margin: 0;">${businessName}</h1>
+            ${businessSettings?.email ? `<p style="color: #666; margin: 5px 0;">${businessSettings.email}</p>` : ''}
           </div>
 
           <div style="background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 20px; text-align: center; margin: 25px 0;">
@@ -138,7 +161,7 @@ serve(async (req) => {
             <p style="color: #155724; font-size: 18px; margin: 0;">Thank you for your payment!</p>
           </div>
 
-          <p>Dear ${customer.first_name} ${customer.last_name},</p>
+          <p>Dear ${customer.first_name},</p>
           
           <p>We are delighted to confirm that your payment has been successfully received. Your order is now confirmed and will be processed shortly.</p>
 
@@ -146,8 +169,8 @@ serve(async (req) => {
             <h3 style="color: #333; margin-top: 0;">Payment Details</h3>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
-                <td style="padding: 8px 0; color: #666;"><strong>Invoice Number:</strong></td>
-                <td style="padding: 8px 0; text-align: right;">${invoice.invoice_number}</td>
+                <td style="padding: 8px 0; color: #666;"><strong>Receipt Number:</strong></td>
+                <td style="padding: 8px 0; text-align: right;">REC-${receiptNumber}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; color: #666;"><strong>Order Number:</strong></td>
@@ -159,7 +182,7 @@ serve(async (req) => {
               </tr>
               <tr style="border-top: 2px solid #ddd;">
                 <td style="padding: 12px 0; color: #666; font-size: 16px;"><strong>Amount Paid:</strong></td>
-                <td style="padding: 12px 0; text-align: right; font-size: 20px; color: #28a745; font-weight: bold;">R${parseFloat(invoice.paid_amount).toFixed(2)}</td>
+                <td style="padding: 12px 0; text-align: right; font-size: 20px; color: #28a745; font-weight: bold;">R${parseFloat(invoice.total_amount).toFixed(2)}</td>
               </tr>
               <tr>
                 <td style="padding: 8px 0; color: #28a745;"><strong>Status:</strong></td>
@@ -182,14 +205,13 @@ serve(async (req) => {
             </p>
           </div>
 
-          <p>We truly appreciate your business and look forward to serving you with the finest honey and gourmet mushrooms nature has to offer.</p>
+          <p>We truly appreciate your business!</p>
 
           <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;" />
           
           <p style="color: #666; font-size: 14px;">
-            Warm regards,<br>
-            <strong style="color: #2c5f2d;">The PureMycelium Team</strong><br>
-            <span style="font-size: 12px; color: #999;">Bringing nature's finest to your table</span>
+            Best regards,<br>
+            <strong style="color: #2c5f2d;">The ${businessName} Team</strong>
           </p>
 
           <p style="color: #999; font-size: 11px; text-align: center; margin-top: 30px;">
@@ -199,13 +221,14 @@ serve(async (req) => {
       ` : `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2c5f2d; margin: 0;">🍄 PureMycelium</h1>
-            <p style="color: #666; margin: 5px 0;">Premium Honey & Gourmet Mushrooms</p>
+            ${businessSettings?.logo_url ? `<img src="${businessSettings.logo_url}" alt="${businessName}" style="max-height: 60px; max-width: 200px; margin-bottom: 10px;" />` : ''}
+            <h1 style="color: #2c5f2d; margin: 0;">${businessName}</h1>
+            ${businessSettings?.email ? `<p style="color: #666; margin: 5px 0;">${businessSettings.email}</p>` : ''}
           </div>
 
           <h2 style="color: #333; border-bottom: 2px solid #2c5f2d; padding-bottom: 10px;">Invoice</h2>
           
-          <p>Dear ${customer.first_name} ${customer.last_name},</p>
+          <p>Dear ${customer.first_name},</p>
           <p>Thank you for your order! Please find your invoice details below.</p>
           
           <div style="background: #f9f9f9; padding: 20px; border-radius: 8px; margin: 25px 0;">
@@ -240,15 +263,14 @@ serve(async (req) => {
           
           <p style="color: #666; font-size: 14px;">
             Best regards,<br>
-            <strong style="color: #2c5f2d;">The PureMycelium Team</strong><br>
-            <span style="font-size: 12px; color: #999;">Premium Honey & Gourmet Mushrooms</span>
+            <strong style="color: #2c5f2d;">The ${businessName} Team</strong>
           </p>
         </div>
       `;
 
       try {
         const emailResponse = await resend.emails.send({
-          from: 'PureMycelium <invoices@resend.dev>',
+          from: `${businessName} <info@puremycelium.co.za>`,
           to: [customer.email],
           subject: emailSubject,
           html: emailHtml,

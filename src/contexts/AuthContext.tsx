@@ -8,6 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   roles: string[];
   isAdmin: boolean;
+  hasAnyRole: boolean;
   signOut: () => Promise<void>;
 }
 
@@ -72,9 +73,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const isAdmin = roles.includes('admin');
+  const hasAnyRole = roles.length > 0;
 
   return (
-    <AuthContext.Provider value={{ user, session, isLoading, roles, isAdmin, signOut }}>
+    <AuthContext.Provider value={{ user, session, isLoading, roles, isAdmin, hasAnyRole, signOut }}>
       {children}
     </AuthContext.Provider>
   );

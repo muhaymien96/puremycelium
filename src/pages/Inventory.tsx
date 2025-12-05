@@ -11,6 +11,10 @@ import {
   Package,
   Trash2,
   Pencil,
+  History,
+  PackagePlus,
+  BoxesIcon,
+  Tag,
 } from 'lucide-react';
 import { useProducts, useDeleteProduct } from '@/hooks/useProducts';
 import { useInventoryDashboard } from '@/hooks/useInventory';
@@ -40,8 +44,26 @@ import {
 } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const LOW_STOCK_THRESHOLD = 10;
+
+const DISCONTINUE_REASONS = [
+  { value: 'discontinued', label: 'Product discontinued by supplier' },
+  { value: 'seasonal', label: 'Seasonal item - out of season' },
+  { value: 'replaced', label: 'Replaced by new product' },
+  { value: 'low_demand', label: 'Low demand / poor sales' },
+  { value: 'quality_issues', label: 'Quality issues' },
+  { value: 'expired_stock', label: 'All stock expired' },
+  { value: 'temporary', label: 'Temporarily unavailable' },
+  { value: 'other', label: 'Other (specify below)' },
+];
 
 const Inventory = () => {
   const { data: products, isLoading } = useProducts();
@@ -55,6 +77,7 @@ const Inventory = () => {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [productToDelete, setProductToDelete] = useState<any>(null);
   const [deactivationReason, setDeactivationReason] = useState('');
+  const [selectedReasonType, setSelectedReasonType] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   const lowStockProducts =
@@ -218,7 +241,7 @@ const Inventory = () => {
                         <div>
                           <p className="text-sm font-medium">{product.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            Only {product.total_stock} units remaining
+                            Only {product.total_stock} remaining
                           </p>
                         </div>
                         <Button
@@ -266,7 +289,7 @@ const Inventory = () => {
                           </p>
                         </div>
                         <Badge variant="outline" className="text-xs">
-                          {batch.quantity} units
+                          {batch.quantity}
                         </Badge>
                       </div>
                     ))}
@@ -322,13 +345,17 @@ const Inventory = () => {
             ) : filteredProducts && filteredProducts.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2">
                 {filteredProducts.map((product) => {
-                  const lowStock = (product.total_stock ?? 0) < LOW_STOCK_THRESHOLD;
+                  const stock = product.total_stock ?? 0;
+                  const noStock = stock === 0;
+                  const lowStock = stock > 0 && stock < LOW_STOCK_THRESHOLD;
 
                   const cardClasses = `
                     border bg-card/80 backdrop-blur-sm transition-all duration-200
                     hover:-translate-y-[1px] hover:shadow-md
                     ${
-                      lowStock
+                      noStock
+                        ? 'border-red-400 shadow-sm ring-1 ring-red-200 bg-red-50/50 dark:bg-red-950/20'
+                        : lowStock
                         ? 'border-amber-300/80 shadow-sm ring-1 ring-amber-100/80'
                         : 'shadow-sm hover:border-primary/30'
                     }
@@ -344,10 +371,19 @@ const Inventory = () => {
                               <h3 className="font-semibold text-sm md:text-base leading-tight">
                                 {product.name}
                               </h3>
-                              {lowStock && (
+                              {noStock && (
                                 <Badge
                                   variant="destructive"
                                   className="text-[10px] md:text-[11px] px-2 py-0.5 flex items-center gap-1"
+                                >
+                                  <AlertTriangle className="h-3 w-3" />
+                                  Out of stock
+                                </Badge>
+                              )}
+                              {lowStock && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] md:text-[11px] px-2 py-0.5 flex items-center gap-1 border-amber-500 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                                 >
                                   <AlertTriangle className="h-3 w-3" />
                                   Low stock
@@ -375,119 +411,130 @@ const Inventory = () => {
                           </div>
 
                           {/* Desktop actions (top-right) */}
-                          <div className="hidden md:flex flex-col gap-1">
+                          <div className="hidden md:flex flex-col gap-1.5">
                             <Button
                               size="sm"
                               variant="outline"
-                              className="justify-start"
+                              className="justify-start h-8 text-xs"
                               onClick={() => {
                                 setSelectedProduct(product);
                                 setShowEditProduct(true);
                               }}
                             >
-                              <Pencil className="h-3 w-3 mr-1" />
+                              <Pencil className="h-3.5 w-3.5 mr-1.5" />
                               Edit
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
-                              className="justify-start"
+                              className="justify-start h-8 text-xs"
                               onClick={() => {
                                 setSelectedProduct(product);
                                 setShowBatchHistory(true);
                               }}
                             >
+                              <History className="h-3.5 w-3.5 mr-1.5" />
                               History
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
-                              className="justify-start"
+                              className="justify-start h-8 text-xs"
                               onClick={() => {
                                 setSelectedProduct(product);
                                 setShowAddBatch(true);
                               }}
                             >
+                              <PackagePlus className="h-3.5 w-3.5 mr-1.5" />
                               Add Batch
                             </Button>
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="justify-start text-destructive"
+                              className="justify-start h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={() => setProductToDelete(product)}
                             >
-                              <Trash2 className="h-3 w-3 mr-1" />
+                              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                               Deactivate
                             </Button>
                           </div>
                         </div>
 
                         {/* Metrics row */}
-                        <div className="flex flex-wrap items-end justify-between gap-4 md:gap-6">
-                          <div>
-                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                              Stock on Hand
-                            </p>
-                            <p className="text-lg md:text-xl font-semibold">
-                              {product.total_stock}{' '}
-                              <span className="text-xs font-normal text-muted-foreground">
-                                {product.unit_of_measure || 'units'}
-                              </span>
-                            </p>
+                        <div className="flex flex-wrap items-center justify-between gap-4 md:gap-6 pt-2 border-t">
+                          <div className="flex items-center gap-2">
+                            <div className="p-2 rounded-lg bg-primary/10">
+                              <BoxesIcon className="h-4 w-4 text-primary" />
+                            </div>
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                Stock on Hand
+                              </p>
+                              <p className="text-lg font-bold">
+                                {product.total_stock}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                              Price
-                            </p>
-                            <p className="text-lg md:text-xl font-semibold">
-                              R {Number(product.unit_price).toFixed(2)}
-                            </p>
+                          <div className="flex items-center gap-2">
+                            <div className="p-2 rounded-lg bg-green-500/10">
+                              <Tag className="h-4 w-4 text-green-600" />
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                Price
+                              </p>
+                              <p className="text-lg font-bold">
+                                R {Number(product.unit_price).toFixed(2)}
+                              </p>
+                            </div>
                           </div>
                         </div>
 
                         {/* Mobile actions (bottom) */}
-                        <div className="flex md:hidden flex-wrap gap-2 pt-1 border-t mt-1 pt-2">
+                        <div className="flex md:hidden flex-wrap gap-2 pt-3 border-t mt-2">
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1"
+                            className="flex-1 h-9 text-xs"
                             onClick={() => {
                               setSelectedProduct(product);
                               setShowEditProduct(true);
                             }}
                           >
-                            <Pencil className="h-4 w-4 mr-1" />
+                            <Pencil className="h-3.5 w-3.5 mr-1.5" />
                             Edit
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1"
+                            className="flex-1 h-9 text-xs"
                             onClick={() => {
                               setSelectedProduct(product);
                               setShowBatchHistory(true);
                             }}
                           >
+                            <History className="h-3.5 w-3.5 mr-1.5" />
                             History
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1"
+                            className="flex-1 h-9 text-xs"
                             onClick={() => {
                               setSelectedProduct(product);
                               setShowAddBatch(true);
                             }}
                           >
+                            <PackagePlus className="h-3.5 w-3.5 mr-1.5" />
                             Add Batch
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="flex-1 text-destructive"
+                            className="flex-1 h-9 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => setProductToDelete(product)}
                           >
-                            <Trash2 className="h-4 w-4 mr-1" />
+                            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                             Deactivate
                           </Button>
                         </div>
@@ -639,6 +686,7 @@ const Inventory = () => {
               onOpenChange={setShowAddBatch}
               productId={selectedProduct.id}
               productName={selectedProduct.name}
+              productSku={selectedProduct.sku}
             />
             <BatchHistoryModal
               open={showBatchHistory}
@@ -655,6 +703,7 @@ const Inventory = () => {
           onOpenChange={() => {
             setProductToDelete(null);
             setDeactivationReason('');
+            setSelectedReasonType('');
           }}
         >
           <AlertDialogContent>
@@ -666,35 +715,72 @@ const Inventory = () => {
                 inventory but preserve historical data.
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <div className="my-4">
-              <label
-                htmlFor="reason"
-                className="text-sm font-medium mb-2 block"
-              >
-                Reason for deactivation (required) *
-              </label>
-              <Textarea
-                id="reason"
-                placeholder="e.g., Product discontinued, seasonal item, replaced by new product..."
-                value={deactivationReason}
-                onChange={(e) => setDeactivationReason(e.target.value)}
-                className="min-h-[80px]"
-              />
-              {deactivationReason.trim().length > 0 &&
-                deactivationReason.trim().length < 3 && (
-                  <p className="text-sm text-destructive mt-1">
-                    Reason must be at least 3 characters.
-                  </p>
-                )}
+            <div className="my-4 space-y-4">
+              <div>
+                <label
+                  htmlFor="reason-type"
+                  className="text-sm font-medium mb-2 block"
+                >
+                  Reason for deactivation *
+                </label>
+                <Select
+                  value={selectedReasonType}
+                  onValueChange={(value) => {
+                    setSelectedReasonType(value);
+                    if (value !== 'other') {
+                      const reason = DISCONTINUE_REASONS.find(r => r.value === value);
+                      setDeactivationReason(reason?.label || '');
+                    } else {
+                      setDeactivationReason('');
+                    }
+                  }}
+                >
+                  <SelectTrigger id="reason-type">
+                    <SelectValue placeholder="Select a reason..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DISCONTINUE_REASONS.map((reason) => (
+                      <SelectItem key={reason.value} value={reason.value}>
+                        {reason.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {selectedReasonType === 'other' && (
+                <div>
+                  <label
+                    htmlFor="reason"
+                    className="text-sm font-medium mb-2 block"
+                  >
+                    Please specify *
+                  </label>
+                  <Textarea
+                    id="reason"
+                    placeholder="Enter your reason for deactivation..."
+                    value={deactivationReason}
+                    onChange={(e) => setDeactivationReason(e.target.value)}
+                    className="min-h-[80px]"
+                  />
+                  {deactivationReason.trim().length > 0 &&
+                    deactivationReason.trim().length < 3 && (
+                      <p className="text-sm text-destructive mt-1">
+                        Reason must be at least 3 characters.
+                      </p>
+                    )}
+                </div>
+              )}
             </div>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                disabled={deactivationReason.trim().length < 3}
+                disabled={!selectedReasonType || (selectedReasonType === 'other' && deactivationReason.trim().length < 3)}
                 onClick={() => {
                   if (
                     productToDelete &&
-                    deactivationReason.trim().length >= 3
+                    selectedReasonType &&
+                    (selectedReasonType !== 'other' || deactivationReason.trim().length >= 3)
                   ) {
                     deleteProduct.mutate({
                       productId: productToDelete.id,
@@ -702,6 +788,7 @@ const Inventory = () => {
                     });
                     setProductToDelete(null);
                     setDeactivationReason('');
+                    setSelectedReasonType('');
                   }
                 }}
               >

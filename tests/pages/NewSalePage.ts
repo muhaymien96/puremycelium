@@ -12,7 +12,6 @@ export class NewSalePage extends BasePage {
   private readonly customerSelect: Locator;
   private readonly cartItems: Locator;
   private readonly cashPaymentButton: Locator;
-  private readonly cardPaymentButton: Locator;
   private readonly paymentLinkButton: Locator;
   private readonly sendToCustomerCheckbox: Locator;
   private readonly sendToCustomerLabel: Locator;
@@ -31,7 +30,6 @@ export class NewSalePage extends BasePage {
     this.customerSelect = page.getByRole('button', { name: /select customer/i }).or(page.getByPlaceholder(/customer/i));
     this.cartItems = page.locator('[data-testid="cart-item"]');
     this.cashPaymentButton = page.locator('button:has-text("Cash")');
-    this.cardPaymentButton = page.locator('button:has-text("Card (Yoco Terminal)")');
     this.paymentLinkButton = page.locator('button:has-text("Payment Link")');
     this.sendToCustomerCheckbox = page.locator('#sendToCustomer');
     this.sendToCustomerLabel = page.locator('label[for="sendToCustomer"]');
@@ -79,13 +77,10 @@ export class NewSalePage extends BasePage {
     return await this.cartItems.count();
   }
 
-  async selectPaymentMethod(method: 'CASH' | 'YOKO_WEBPOS' | 'PAYMENT_LINK') {
+  async selectPaymentMethod(method: 'CASH' | 'PAYMENT_LINK') {
     switch (method) {
       case 'CASH':
         await this.clickElement(this.cashPaymentButton);
-        break;
-      case 'YOKO_WEBPOS':
-        await this.clickElement(this.cardPaymentButton);
         break;
       case 'PAYMENT_LINK':
         await this.clickElement(this.paymentLinkButton);
@@ -94,14 +89,11 @@ export class NewSalePage extends BasePage {
     await this.waitForTimeout(300);
   }
 
-  async isPaymentMethodSelected(method: 'CASH' | 'YOKO_WEBPOS' | 'PAYMENT_LINK'): Promise<boolean> {
+  async isPaymentMethodSelected(method: 'CASH' | 'PAYMENT_LINK'): Promise<boolean> {
     let button: Locator;
     switch (method) {
       case 'CASH':
         button = this.cashPaymentButton;
-        break;
-      case 'YOKO_WEBPOS':
-        button = this.cardPaymentButton;
         break;
       case 'PAYMENT_LINK':
         button = this.paymentLinkButton;

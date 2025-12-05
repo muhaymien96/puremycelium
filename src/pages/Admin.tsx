@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Users,
   Shield,
@@ -25,7 +27,13 @@ import {
   ShoppingCart,
   AlertCircle,
   MoreVertical,
+  Database,
+  Trash2,
+  Calculator,
+  Save,
+  Pencil,
 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import {
   useUsers,
   useAssignRole,
@@ -33,6 +41,7 @@ import {
   useActivityLog,
   useSystemStats,
 } from "@/hooks/useUserManagement";
+import { useSystemSettings, useUpdateSystemSettings } from "@/hooks/useSystemSettings";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -64,12 +73,26 @@ const Admin = () => {
   const { data: users, isLoading: loadingUsers } = useUsers();
   const { data: activityLog, isLoading: loadingActivity } = useActivityLog();
   const { data: stats, isLoading: loadingStats } = useSystemStats();
+  const { data: systemSettings, isLoading: loadingSettings } = useSystemSettings();
+  const updateSettings = useUpdateSystemSettings();
   const assignRole = useAssignRole();
   const removeRole = useRemoveRole();
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [roleAction, setRoleAction] = useState<"add" | "remove" | null>(null);
   const [selectedRole, setSelectedRole] = useState<"admin" | "user">("user");
+  const [showCleanupDialog, setShowCleanupDialog] = useState(false);
+  const [isCleaningDatabase, setIsCleaningDatabase] = useState(false);
+  const [showBackfillDialog, setShowBackfillDialog] = useState(false);
+  const [isBackfilling, setIsBackfilling] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<any>(null);
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
+  const [editedSettings, setEditedSettings] = useState({
+    stockLowThreshold: 10,
+    expiryWarningDays: 30,
+    criticalExpiryDays: 60,
+    defaultCostMarginPercent: 60,
+  });
 
   const handleAssignRole = () => {
     if (selectedUser) {
@@ -97,6 +120,82 @@ const Admin = () => {
       removeRole.mutate({ userId: selectedUser.id, role: selectedRole });
       setSelectedUser(null);
       setRoleAction(null);
+    }
+  };
+
+  const handleCleanDatabase = async () => {
+    setIsCleaningDatabase(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("You must be logged in to perform this action");
+        return;
+      }
+
+      const response = await fetch(
+        "https://acxhhfwvxtkvxkvmfiep.supabase.co/functions/v1/clean-database",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to clean database");
+      }
+
+      toast.success("Database cleaned successfully");
+      setShowCleanupDialog(false);
+      window.location.reload();
+    } catch (error: any) {
+      console.error("Error cleaning database:", error);
+      toast.error(error.message || "Failed to clean database");
+    } finally {
+      setIsCleaningDatabase(false);
+    }
+  };
+
+  const handleBackfillCogs = async () => {
+    setIsBackfilling(true);
+    setBackfillResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("You must be logged in to perform this action");
+        return;
+      }
+
+      const response = await fetch(
+        "https://acxhhfwvxtkvxkvmfiep.supabase.co/functions/v1/backfill-cogs",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to backfill COGS");
+      }
+
+      setBackfillResult(result);
+      toast.success(`Backfill complete: ${result.updated} transactions updated`);
+    } catch (error: any) {
+      console.error("Error backfilling COGS:", error);
+      toast.error(error.message || "Failed to backfill COGS");
+    } finally {
+      setIsBackfilling(false);
     }
   };
 
@@ -215,27 +314,29 @@ const Admin = () => {
 
           {/* Tabs */}
           <Tabs defaultValue="users" className="w-full">
-            <TabsList className="w-full justify-start md:justify-center overflow-x-auto rounded-full bg-muted/60 px-1 py-1">
+            <TabsList className="grid w-full grid-cols-3 h-auto p-1 bg-muted/60 rounded-lg">
               <TabsTrigger
                 value="users"
-                className="flex items-center gap-1 text-xs md:text-sm px-3 md:px-4"
+                className="flex items-center justify-center gap-1 text-[11px] md:text-sm py-2 px-1 md:px-4"
               >
-                <Users className="h-3 w-3 md:h-4 md:w-4 mr-1" />
-                User Management
+                <Users className="h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">User Management</span>
+                <span className="sm:hidden">Users</span>
               </TabsTrigger>
               <TabsTrigger
                 value="activity"
-                className="flex items-center gap-1 text-xs md:text-sm px-3 md:px-4"
+                className="flex items-center justify-center gap-1 text-[11px] md:text-sm py-2 px-1 md:px-4"
               >
-                <Activity className="h-3 w-3 md:h-4 md:w-4 mr-1" />
-                Activity Log
+                <Activity className="h-3 w-3 md:h-4 md:w-4" />
+                <span className="hidden sm:inline">Activity Log</span>
+                <span className="sm:hidden">Activity</span>
               </TabsTrigger>
               <TabsTrigger
                 value="settings"
-                className="flex items-center gap-1 text-xs md:text-sm px-3 md:px-4"
+                className="flex items-center justify-center gap-1 text-[11px] md:text-sm py-2 px-1 md:px-4"
               >
-                <Settings className="h-3 w-3 md:h-4 md:w-4 mr-1" />
-                Settings
+                <Settings className="h-3 w-3 md:h-4 md:w-4" />
+                <span>Settings</span>
               </TabsTrigger>
             </TabsList>
 
@@ -494,60 +595,257 @@ const Admin = () => {
             <TabsContent value="settings" className="space-y-4 mt-4">
               <Card className="shadow-sm">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base md:text-lg">
-                    System Settings
-                  </CardTitle>
-                  <CardDescription className="text-xs md:text-sm">
-                    Configure global system preferences.
-                  </CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base md:text-lg">
+                        System Settings
+                      </CardTitle>
+                      <CardDescription className="text-xs md:text-sm">
+                        Configure global system preferences.
+                      </CardDescription>
+                    </div>
+                    {!isEditingSettings ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setEditedSettings({
+                            stockLowThreshold: systemSettings?.stockLowThreshold || 10,
+                            expiryWarningDays: systemSettings?.expiryWarningDays || 30,
+                            criticalExpiryDays: systemSettings?.criticalExpiryDays || 60,
+                            defaultCostMarginPercent: systemSettings?.defaultCostMarginPercent || 60,
+                          });
+                          setIsEditingSettings(true);
+                        }}
+                      >
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsEditingSettings(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            updateSettings.mutate(editedSettings, {
+                              onSuccess: () => {
+                                toast.success('Settings saved');
+                                setIsEditingSettings(false);
+                              },
+                            });
+                          }}
+                        >
+                          <Save className="h-4 w-4 mr-2" />
+                          Save
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </CardHeader>
 
                 <CardContent>
-                  <div className="space-y-3">
-                    {/* Setting row component style */}
-                    {[
-                      {
-                        title: "Stock Low Threshold",
-                        desc: "Alert when product stock falls below this level.",
-                        value: "10 units",
-                      },
-                      {
-                        title: "Expiry Warning Days",
-                        desc: "Show warning for products expiring within this period.",
-                        value: "30 days",
-                      },
-                      {
-                        title: "Critical Expiry Days",
-                        desc: "Prioritize reorder for products expiring within this period.",
-                        value: "60 days",
-                      },
-                      {
-                        title: "Default Cost Margin",
-                        desc: "Fallback cost calculation when batch cost is missing.",
-                        value: "60% of retail",
-                      },
-                    ].map((setting, idx) => (
-                      <div
-                        key={idx}
-                        className="flex justify-between items-center gap-4 p-4 bg-card/60 rounded-xl border hover:shadow transition-shadow"
-                      >
+                  {loadingSettings ? (
+                    <div className="space-y-3">
+                      {[1,2,3,4].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Stock Low Threshold */}
+                      <div className="flex justify-between items-center gap-4 p-4 bg-card/60 rounded-xl border hover:shadow transition-shadow">
                         <div className="space-y-1">
-                          <h4 className="font-medium text-sm md:text-base">
-                            {setting.title}
-                          </h4>
+                          <h4 className="font-medium text-sm md:text-base">Stock Low Threshold</h4>
                           <p className="text-xs md:text-sm text-muted-foreground leading-tight">
-                            {setting.desc}
+                            Alert when product stock falls below this level.
                           </p>
                         </div>
-
-                        <Badge
-                          variant="outline"
-                          className="rounded-full px-3 py-1 text-[11px] md:text-xs whitespace-nowrap bg-white shadow-sm"
-                        >
-                          {setting.value}
-                        </Badge>
+                        {isEditingSettings ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={editedSettings.stockLowThreshold}
+                              onChange={(e) => setEditedSettings(s => ({ ...s, stockLowThreshold: parseInt(e.target.value) || 0 }))}
+                              className="w-20 text-right"
+                            />
+                            <span className="text-xs text-muted-foreground">units</span>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] md:text-xs whitespace-nowrap bg-white shadow-sm">
+                            {systemSettings?.stockLowThreshold || 10} units
+                          </Badge>
+                        )}
                       </div>
-                    ))}
+
+                      {/* Expiry Warning Days */}
+                      <div className="flex justify-between items-center gap-4 p-4 bg-card/60 rounded-xl border hover:shadow transition-shadow">
+                        <div className="space-y-1">
+                          <h4 className="font-medium text-sm md:text-base">Expiry Warning Days</h4>
+                          <p className="text-xs md:text-sm text-muted-foreground leading-tight">
+                            Show warning for products expiring within this period.
+                          </p>
+                        </div>
+                        {isEditingSettings ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={editedSettings.expiryWarningDays}
+                              onChange={(e) => setEditedSettings(s => ({ ...s, expiryWarningDays: parseInt(e.target.value) || 0 }))}
+                              className="w-20 text-right"
+                            />
+                            <span className="text-xs text-muted-foreground">days</span>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] md:text-xs whitespace-nowrap bg-white shadow-sm">
+                            {systemSettings?.expiryWarningDays || 30} days
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Critical Expiry Days */}
+                      <div className="flex justify-between items-center gap-4 p-4 bg-card/60 rounded-xl border hover:shadow transition-shadow">
+                        <div className="space-y-1">
+                          <h4 className="font-medium text-sm md:text-base">Critical Expiry Days</h4>
+                          <p className="text-xs md:text-sm text-muted-foreground leading-tight">
+                            Prioritize reorder for products expiring within this period.
+                          </p>
+                        </div>
+                        {isEditingSettings ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={editedSettings.criticalExpiryDays}
+                              onChange={(e) => setEditedSettings(s => ({ ...s, criticalExpiryDays: parseInt(e.target.value) || 0 }))}
+                              className="w-20 text-right"
+                            />
+                            <span className="text-xs text-muted-foreground">days</span>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] md:text-xs whitespace-nowrap bg-white shadow-sm">
+                            {systemSettings?.criticalExpiryDays || 60} days
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Default Cost Margin */}
+                      <div className="flex justify-between items-center gap-4 p-4 bg-card/60 rounded-xl border hover:shadow transition-shadow">
+                        <div className="space-y-1">
+                          <h4 className="font-medium text-sm md:text-base">Default Cost Margin</h4>
+                          <p className="text-xs md:text-sm text-muted-foreground leading-tight">
+                            Fallback cost calculation when batch cost is missing.
+                          </p>
+                        </div>
+                        {isEditingSettings ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              value={editedSettings.defaultCostMarginPercent}
+                              onChange={(e) => setEditedSettings(s => ({ ...s, defaultCostMarginPercent: parseInt(e.target.value) || 0 }))}
+                              className="w-20 text-right"
+                            />
+                            <span className="text-xs text-muted-foreground">% of retail</span>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] md:text-xs whitespace-nowrap bg-white shadow-sm">
+                            {systemSettings?.defaultCostMarginPercent || 60}% of retail
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Data Maintenance Section */}
+                  <div className="mt-8 pt-8 border-t">
+                    <div className="flex items-start gap-3 mb-4">
+                      <Calculator className="h-5 w-5 text-primary mt-0.5" />
+                      <div>
+                        <h3 className="font-semibold text-base md:text-lg">
+                          Data Maintenance
+                        </h3>
+                        <p className="text-xs md:text-sm text-muted-foreground mt-1">
+                          Tools to fix and update historical data.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-primary/5 rounded-xl border border-primary/20">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Calculator className="h-4 w-4 text-primary" />
+                            <h4 className="font-medium text-sm md:text-base">
+                              Backfill Historical COGS
+                            </h4>
+                          </div>
+                          <p className="text-xs md:text-sm text-muted-foreground leading-tight">
+                            Update financial transactions with estimated cost of goods sold using current product costs.
+                            This fixes profit calculations for historical orders.
+                          </p>
+                        </div>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => setShowBackfillDialog(true)}
+                          className="shrink-0 gap-2"
+                        >
+                          <Calculator className="h-4 w-4" />
+                          Backfill COGS
+                        </Button>
+                      </div>
+                      {backfillResult && (
+                        <div className="mt-3 p-3 bg-background rounded-lg text-xs">
+                          <p className="font-medium">Last backfill result:</p>
+                          <p className="text-muted-foreground">
+                            Updated: {backfillResult.updated} | Skipped: {backfillResult.skipped} | Total: {backfillResult.total}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Dangerous Actions Section */}
+                  <div className="mt-8 pt-8 border-t">
+                    <div className="flex items-start gap-3 mb-4">
+                      <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+                      <div>
+                        <h3 className="font-semibold text-base md:text-lg text-destructive">
+                          Dangerous Actions
+                        </h3>
+                        <p className="text-xs md:text-sm text-muted-foreground mt-1">
+                          These actions are irreversible. Use with extreme caution.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-destructive/5 rounded-xl border border-destructive/20">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Database className="h-4 w-4 text-destructive" />
+                            <h4 className="font-medium text-sm md:text-base">
+                              Clean Database
+                            </h4>
+                          </div>
+                          <p className="text-xs md:text-sm text-muted-foreground leading-tight">
+                            Permanently delete all products, orders, invoices, customers, and market events.
+                            User accounts and roles will be preserved.
+                          </p>
+                        </div>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => setShowCleanupDialog(true)}
+                          className="shrink-0 gap-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Clean Database
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -631,6 +929,109 @@ const Admin = () => {
                   onClick={handleRemoveRole}
                 >
                   Remove Role
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Database Cleanup Confirmation Dialog */}
+          <AlertDialog
+            open={showCleanupDialog}
+            onOpenChange={setShowCleanupDialog}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                  <AlertCircle className="h-5 w-5" />
+                  Clean Database - Confirm Action
+                </AlertDialogTitle>
+                <AlertDialogDescription className="space-y-3">
+                  <p className="font-medium text-foreground">
+                    This action will permanently delete:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-sm">
+                    <li>All products and inventory batches</li>
+                    <li>All orders and order items</li>
+                    <li>All invoices and payments</li>
+                    <li>All customers and contact information</li>
+                    <li>All market events</li>
+                    <li>All financial transactions and refunds</li>
+                    <li>All stock movement history</li>
+                  </ul>
+                  <p className="font-medium text-destructive pt-2">
+                    This action cannot be undone. User accounts and roles will be preserved.
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isCleaningDatabase}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-destructive hover:bg-destructive/90"
+                  onClick={handleCleanDatabase}
+                  disabled={isCleaningDatabase}
+                >
+                  {isCleaningDatabase ? (
+                    <>
+                      <Clock className="mr-2 h-4 w-4 animate-spin" />
+                      Cleaning...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Yes, Clean Database
+                    </>
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* COGS Backfill Confirmation Dialog */}
+          <AlertDialog
+            open={showBackfillDialog}
+            onOpenChange={setShowBackfillDialog}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <Calculator className="h-5 w-5 text-primary" />
+                  Backfill Historical COGS
+                </AlertDialogTitle>
+                <AlertDialogDescription className="space-y-3">
+                  <p className="font-medium text-foreground">
+                    This will update all financial transactions where cost = 0 with estimated COGS:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-sm">
+                    <li>Uses batch cost if available</li>
+                    <li>Falls back to product cost price</li>
+                    <li>Estimates at 60% of sale price if no cost data</li>
+                  </ul>
+                  <p className="text-muted-foreground pt-2">
+                    This is safe to run multiple times - it only updates transactions with zero cost.
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isBackfilling}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleBackfillCogs}
+                  disabled={isBackfilling}
+                >
+                  {isBackfilling ? (
+                    <>
+                      <Clock className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <Calculator className="mr-2 h-4 w-4" />
+                      Start Backfill
+                    </>
+                  )}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

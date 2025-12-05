@@ -1,14 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import type { Enums } from '@/integrations/supabase/types';
 
-export interface UserWithRole {
+interface UserWithRole {
   id: string;
   email: string;
   full_name: string;
   phone: string | null;
   created_at: string;
-  roles: Array<{ role: 'admin' | 'user' }>;
+  roles: Array<{ role: Enums<"app_role"> }>;
   last_sign_in_at: string | null;
 }
 

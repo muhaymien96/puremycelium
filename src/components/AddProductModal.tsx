@@ -5,38 +5,57 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useCreateProduct } from '@/hooks/useProducts';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-interface AddProductModalProps {
+export interface AddProductModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultName?: string;
+  onProductCreated?: (productId: string) => void;
 }
 
-export const AddProductModal = ({ open, onOpenChange }: AddProductModalProps) => {
+export const AddProductModal = ({ 
+  open, 
+  onOpenChange, 
+  defaultName = '',
+  onProductCreated 
+}: AddProductModalProps) => {
   const createProduct = useCreateProduct();
   const [formData, setFormData] = useState({
     name: '',
     category: 'honey',
     unit_price: '',
-    // ...existing code...
+    cost_price: '',
     description: '',
     sku: '',
     unit_of_measure: 'kg',
   });
 
+  // Update name when defaultName changes
+  useEffect(() => {
+    if (defaultName && open) {
+      setFormData(f => ({ ...f, name: defaultName }));
+    }
+  }, [defaultName, open]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await createProduct.mutateAsync({
+    const result = await createProduct.mutateAsync({
       ...formData,
       unit_price: parseFloat(formData.unit_price),
-      // ...existing code...
+      cost_price: formData.cost_price ? parseFloat(formData.cost_price) : undefined,
     });
+    
+    if (onProductCreated && result?.product?.id) {
+      onProductCreated(result.product.id);
+    }
+    
     onOpenChange(false);
     setFormData({
       name: '',
       category: 'honey',
       unit_price: '',
-      // ...existing code...
+      cost_price: '',
       description: '',
       sku: '',
       unit_of_measure: 'kg',
@@ -72,18 +91,30 @@ export const AddProductModal = ({ open, onOpenChange }: AddProductModalProps) =>
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label htmlFor="unit_price">Unit Price (R)</Label>
-            <Input
-              id="unit_price"
-              type="number"
-              step="0.01"
-              value={formData.unit_price}
-              onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
-              required
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="unit_price">Selling Price (R)</Label>
+              <Input
+                id="unit_price"
+                type="number"
+                step="0.01"
+                value={formData.unit_price}
+                onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label htmlFor="cost_price">Cost Price (R)</Label>
+              <Input
+                id="cost_price"
+                type="number"
+                step="0.01"
+                placeholder="Optional"
+                value={formData.cost_price}
+                onChange={(e) => setFormData({ ...formData, cost_price: e.target.value })}
+              />
+            </div>
           </div>
-          {/* Cost price removed: cost is now batch-level only */}
           <div>
             <Label htmlFor="sku">SKU (Optional)</Label>
             <Input
