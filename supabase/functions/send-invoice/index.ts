@@ -270,7 +270,7 @@ serve(async (req) => {
 
       try {
         const emailResponse = await resend.emails.send({
-          from: `${businessName} <info@puremycelium.co.za>`,
+          from: `${businessName} <noreply@revono.co.za>`,
           to: [customer.email],
           subject: emailSubject,
           html: emailHtml,

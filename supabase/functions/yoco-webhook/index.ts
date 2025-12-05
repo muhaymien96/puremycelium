@@ -191,13 +191,16 @@ serve(async (req) => {
       // Find existing invoice and update to paid
       const { data: existingInvoice } = await supabase
         .from('invoices')
-        .select('*, delivery_status, sent_at')
+        .select('*, delivery_status, sent_at, receipt_sent_at')
         .eq('order_id', order_id)
         .single();
 
       if (existingInvoice) {
         // Check if receipt was already sent to prevent duplicates
-        const alreadySent = existingInvoice.delivery_status === 'sent' || existingInvoice.sent_at;
+        // Use receipt_sent_at as primary check (set before sending), with fallbacks
+        const alreadySent = existingInvoice.receipt_sent_at || 
+                           existingInvoice.delivery_status === 'sent' || 
+                           existingInvoice.sent_at;
         
         // Update existing invoice to paid
         await supabase.from('invoices').update({
@@ -212,6 +215,11 @@ serve(async (req) => {
           });
 
           if (!alreadySent) {
+            // Mark receipt as being sent BEFORE actually sending to prevent race conditions
+            await supabase.from('invoices').update({
+              receipt_sent_at: new Date().toISOString()
+            }).eq('id', existingInvoice.id);
+
             await supabase.functions.invoke('send-invoice', {
               body: { invoice_id: existingInvoice.id, send_receipt: true }
             });

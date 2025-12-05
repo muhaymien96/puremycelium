@@ -92,7 +92,7 @@ serve(async (req) => {
     const businessLogo = businessSettings?.logo_url || '';
 
     // Create Yoco checkout
-    const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://yxjygrsmxrsmdzubzpsj.lovable.app';
+    const frontendUrl = Deno.env.get('FRONTEND_URL') || 'https://www.revono.co.za';
     const checkoutPayload = {
       amount: Math.round(amount * 100), // Convert to cents
       currency: 'ZAR',
@@ -194,7 +194,7 @@ serve(async (req) => {
 
     try {
       const emailResponse = await resend.emails.send({
-        from: `${businessName} <info@puremycelium.co.za>`,
+        from: `${businessName} <noreply@revono.co.za>`,
         to: [customer_email],
         subject: `Invoice ${invoice_number} from ${businessName}`,
         html: `
