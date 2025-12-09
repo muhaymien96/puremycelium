@@ -38,7 +38,6 @@ import {
   Plus,
   Receipt,
   Calendar,
-  DollarSign,
   Edit2,
   Trash2,
   MapPin,

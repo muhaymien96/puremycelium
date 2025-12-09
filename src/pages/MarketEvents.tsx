@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { format as formatDate, parse } from 'date-fns';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,7 +11,7 @@ import { AddMarketEventModal } from '@/components/AddMarketEventModal';
 import { EditMarketEventModal } from '@/components/EditMarketEventModal';
 import { EventCalendar } from '@/components/EventCalendar';
 import { EventDayDrawer } from '@/components/EventDayDrawer';
-import { Plus, TrendingUp, DollarSign, Calendar as CalendarIcon, Edit, Trash2, ShoppingBag, Package } from 'lucide-react';
+import { Plus, TrendingUp, Banknote, Coins, Calendar as CalendarIcon, Edit, Trash2, ShoppingBag, Package } from 'lucide-react';
 import { isSameDay, parseISO, isWithinInterval, format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -62,10 +63,14 @@ const MarketEvents = () => {
     },
   });
 
-  const currentDate = new Date();
+  // Month selector state
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+
+  // Update KPIs for selected month/year
   const { data: monthlyStats } = useMonthlyEventProfitability(
-    currentDate.getFullYear(),
-    currentDate.getMonth() + 1
+    selectedYear,
+    selectedMonth
   );
 
   // Filter events for selected date (including multi-day events)
@@ -131,7 +136,35 @@ const MarketEvents = () => {
           </Button>
         </motion.div>
 
-        {/* Monthly Summary */}
+        {/* Monthly Summary with Month Selector */}
+        <div className="flex items-center gap-4 mb-2">
+          <h2 className="text-lg font-semibold">This Month’s Event KPIs</h2>
+          <div className="flex gap-2 items-center">
+            <select
+              value={selectedMonth}
+              onChange={e => setSelectedMonth(Number(e.target.value))}
+              className="border rounded px-2 py-1 text-sm"
+            >
+              {[...Array(12)].map((_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {formatDate(new Date(2000, i, 1), 'MMMM')}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedYear}
+              onChange={e => setSelectedYear(Number(e.target.value))}
+              className="border rounded px-2 py-1 text-sm"
+            >
+              {[...Array(5)].map((_, i) => {
+                const year = new Date().getFullYear() - i;
+                return (
+                  <option key={year} value={year}>{year}</option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
         {monthlyStats && (
           <motion.div
             initial={{ opacity: 0, y: 6 }}
@@ -151,7 +184,7 @@ const MarketEvents = () => {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <DollarSign className="h-4 w-4" />
+                  <Banknote className="h-4 w-4" />
                   <span className="text-xs">Revenue</span>
                 </div>
                 <p className="text-2xl font-bold">R {monthlyStats.totalRevenue.toFixed(0)}</p>
@@ -160,7 +193,7 @@ const MarketEvents = () => {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <DollarSign className="h-4 w-4" />
+                  <Coins className="h-4 w-4" />
                   <span className="text-xs">Costs</span>
                 </div>
                 <p className="text-2xl font-bold">R {monthlyStats.totalCosts.toFixed(0)}</p>

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { financialService } from '@/lib/financial-service';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, DollarSign, Package, Activity } from 'lucide-react';
+import { TrendingUp, TrendingDown, Banknote, Package, Activity } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface FinancialSummaryProps {
@@ -74,8 +74,7 @@ export function FinancialSummary({
           <CardTitle className="text-sm font-medium text-muted-foreground">
             Net Revenue
           </CardTitle>
-          <DollarSign className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
+<Banknote className="h-4 w-4 text-muted-foreground" />        </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
             R {summary.netRevenue.toFixed(2)}
