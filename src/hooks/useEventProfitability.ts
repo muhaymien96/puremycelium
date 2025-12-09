@@ -13,19 +13,15 @@ export const useEventProfitability = (eventId: string) => {
   return useQuery({
     queryKey: ['event_profitability', eventId],
     queryFn: async () => {
-      // Get event costs
-      const { data: event, error: eventError } = await supabase
-        .from('market_events')
-        .select('stall_fee, travel_cost, other_costs')
-        .eq('id', eventId)
-        .single();
+      // Get event costs from expenses table (linked via market_event_id)
+      const { data: expenses, error: expensesError } = await supabase
+        .from('expenses')
+        .select('amount')
+        .eq('market_event_id', eventId);
 
-      if (eventError) throw eventError;
+      if (expensesError) throw expensesError;
 
-      const totalCosts = 
-        (event.stall_fee || 0) + 
-        (event.travel_cost || 0) + 
-        (event.other_costs || 0);
+      const totalCosts = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
 
       // Get revenue from orders linked to this event
       const { data: orders, error: ordersError } = await supabase
@@ -60,16 +56,26 @@ export const useMonthlyEventProfitability = (year: number, month: number) => {
       // Get all events in the month
       const { data: events, error: eventsError } = await supabase
         .from('market_events')
-        .select('id, stall_fee, travel_cost, other_costs')
+        .select('id')
         .gte('event_date', startDate)
         .lte('event_date', endDate);
 
       if (eventsError) throw eventsError;
 
       const eventIds = events?.map(e => e.id) || [];
-      const totalCosts = events?.reduce((sum, e) => 
-        sum + (e.stall_fee || 0) + (e.travel_cost || 0) + (e.other_costs || 0), 0
-      ) || 0;
+
+      // Get total costs from expenses linked to these events ONLY
+      let totalCosts = 0;
+      if (eventIds.length > 0) {
+        const { data: expenses, error: expensesError } = await supabase
+          .from('expenses')
+          .select('amount')
+          .in('market_event_id', eventIds);
+
+        if (expensesError) throw expensesError;
+
+        totalCosts = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      }
 
       // Get revenue from all orders linked to these events
       let totalRevenue = 0;
