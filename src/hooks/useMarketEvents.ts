@@ -5,6 +5,11 @@ import { useEffect } from 'react';
 import type { Tables } from '@/integrations/supabase/types';
 
 export type MarketEvent = Tables<"market_events">;
+export type EventDay = Tables<"event_days">;
+
+export interface MarketEventWithDays extends MarketEvent {
+  event_days?: EventDay[];
+}
 
 export function useMarketEvents() {
   const queryClient = useQueryClient();
@@ -24,6 +29,19 @@ export function useMarketEvents() {
           queryClient.invalidateQueries({ queryKey: ['market-events'] });
           queryClient.invalidateQueries({ queryKey: ['upcoming-market-events'] });
           queryClient.invalidateQueries({ queryKey: ['monthly-event-profitability'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'event_days'
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['market-events'] });
+          queryClient.invalidateQueries({ queryKey: ['upcoming-market-events'] });
+          queryClient.invalidateQueries({ queryKey: ['event-days'] });
         }
       )
       .subscribe();

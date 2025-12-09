@@ -4,16 +4,19 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Clock, XCircle, FileText, Send } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RefreshCw, Clock, XCircle, FileText, Send, CalendarDays, Link2, Unlink2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useProcessPayment, useSendPaymentLink } from '@/hooks/useOrders';
 import { useGenerateInvoice } from '@/hooks/useGenerateInvoice';
+import { useMarketEvents } from '@/hooks/useMarketEvents';
 
 import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RefundModal } from '@/components/RefundModal';
 import { OrderStatusUpdate } from '@/components/OrderStatusUpdate';
 import { toast } from 'sonner';
+import { format, parseISO, isWithinInterval } from 'date-fns';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,7 +40,10 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
   const sendPaymentLink = useSendPaymentLink();
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  const { data: marketEvents } = useMarketEvents();
 
   const { data: order, isLoading, refetch } = useQuery({
     queryKey: ['order-detail', orderId],
@@ -204,6 +210,44 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
     },
   });
 
+  // Update order event link mutation
+  const updateOrderEventMutation = useMutation({
+    mutationFn: async (eventId: string | null) => {
+      const { error } = await supabase
+        .from('orders')
+        .update({ market_event_id: eventId })
+        .eq('id', orderId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(selectedEventId ? 'Order linked to event' : 'Event link removed');
+      queryClient.invalidateQueries({ queryKey: ['order-detail', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['event-sales'] });
+      refetch();
+    },
+    onError: () => {
+      toast.error('Failed to update event link');
+    },
+  });
+
+  // Filter events that are relevant to the order date
+  const orderDate = order?.created_at ? parseISO(order.created_at) : null;
+  const relevantEvents = marketEvents?.filter(event => {
+    if (!orderDate) return true;
+    const eventStart = parseISO(event.event_date);
+    const eventEnd = (event as any).end_date ? parseISO((event as any).end_date) : eventStart;
+    // Show events within a week of the order date
+    const oneWeekBefore = new Date(orderDate);
+    oneWeekBefore.setDate(oneWeekBefore.getDate() - 7);
+    const oneWeekAfter = new Date(orderDate);
+    oneWeekAfter.setDate(oneWeekAfter.getDate() + 7);
+    return eventStart <= oneWeekAfter && eventEnd >= oneWeekBefore;
+  }) || [];
+
+  // Get current linked event
+  const linkedEvent = marketEvents?.find(e => e.id === order?.market_event_id);
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
@@ -253,6 +297,86 @@ export function OrderDetailModal({ orderId, isOpen, onClose }: OrderDetailModalP
                     )}
                   </div>
                 )}
+
+                {/* Event Link */}
+                <div>
+                  <h4 className="font-semibold mb-2 flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4" />
+                    Market Event
+                  </h4>
+                  {linkedEvent ? (
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                      <div>
+                        <p className="font-medium text-sm">{linkedEvent.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(parseISO(linkedEvent.event_date), 'MMM d, yyyy')}
+                          {(linkedEvent as any).end_date && 
+                            ` – ${format(parseISO((linkedEvent as any).end_date), 'MMM d, yyyy')}`}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{linkedEvent.location}</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedEventId(null);
+                          updateOrderEventMutation.mutate(null);
+                        }}
+                        disabled={updateOrderEventMutation.isPending}
+                      >
+                        <Unlink2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Select
+                        value={selectedEventId || ''}
+                        onValueChange={(val) => setSelectedEventId(val || null)}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Select an event to link" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {relevantEvents.length > 0 ? (
+                            relevantEvents.map((event) => (
+                              <SelectItem key={event.id} value={event.id}>
+                                <div className="flex flex-col">
+                                  <span>{event.name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {format(parseISO(event.event_date), 'MMM d')}
+                                    {(event as any).end_date && 
+                                      ` – ${format(parseISO((event as any).end_date), 'MMM d')}`}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          ) : marketEvents?.slice(0, 10).map((event) => (
+                            <SelectItem key={event.id} value={event.id}>
+                              <div className="flex flex-col">
+                                <span>{event.name}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {format(parseISO(event.event_date), 'MMM d')}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        onClick={() => {
+                          if (selectedEventId) {
+                            updateOrderEventMutation.mutate(selectedEventId);
+                          }
+                        }}
+                        disabled={!selectedEventId || updateOrderEventMutation.isPending}
+                        size="sm"
+                      >
+                        <Link2 className="h-4 w-4 mr-1" />
+                        Link
+                      </Button>
+                    </div>
+                  )}
+                </div>
 
                 <Separator />
 

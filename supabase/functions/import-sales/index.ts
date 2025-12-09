@@ -88,15 +88,26 @@ serve(async (req) => {
     // Fetch market events for auto-linking by transaction date
     const { data: eventsInRange } = await supabase
       .from('market_events')
-      .select('id, event_date, name')
-      .gte('event_date', payload.startDate)
-      .lte('event_date', payload.endDate);
+      .select('id, event_date, end_date, name')
+      .lte('event_date', payload.endDate)
+      .or(`end_date.gte.${payload.startDate},end_date.is.null`);
 
-    // Build date-to-event map for auto-linking
-    const eventByDate = new Map<string, string>();
-    (eventsInRange || []).forEach(e => {
-      eventByDate.set(e.event_date, e.id);
-    });
+    // Build date-matching functions for multi-day events
+    // Event matches if transaction date falls within [event_date, end_date] range
+    const findEventForDate = (txDate: string): string | null => {
+      if (!eventsInRange) return null;
+      
+      for (const event of eventsInRange) {
+        const eventStart = event.event_date;
+        const eventEnd = event.end_date || event.event_date;
+        
+        // Check if txDate falls within the event range
+        if (txDate >= eventStart && txDate <= eventEnd) {
+          return event.id;
+        }
+      }
+      return null;
+    };
 
     console.log(`Found ${eventsInRange?.length || 0} market events in date range for auto-linking`);
 
@@ -160,9 +171,9 @@ serve(async (req) => {
           continue;
         }
 
-        // Auto-link to market event by transaction date
+        // Auto-link to market event by transaction date (supports multi-day events)
         const txDate = timestamp.toISOString().split('T')[0]; // YYYY-MM-DD
-        const matchedEventId = eventByDate.get(txDate) || null;
+        const matchedEventId = findEventForDate(txDate);
         
         if (matchedEventId) {
           autoLinkedEvents++;
