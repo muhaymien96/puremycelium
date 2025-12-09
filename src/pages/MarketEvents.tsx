@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,7 +11,9 @@ import { EditMarketEventModal } from '@/components/EditMarketEventModal';
 import { EventCalendar } from '@/components/EventCalendar';
 import { EventDayDrawer } from '@/components/EventDayDrawer';
 import { Plus, TrendingUp, DollarSign, Calendar as CalendarIcon, Edit, Trash2, ShoppingBag, Package } from 'lucide-react';
-import { isSameDay } from 'date-fns';
+import { isSameDay, parseISO, isWithinInterval, format } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { motion } from 'framer-motion';
 import {
@@ -25,6 +27,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+// Helper to check if a date falls within an event's date range
+function isDateInEventRange(date: Date, event: MarketEvent): boolean {
+  const startDate = parseISO(event.event_date);
+  const endDate = (event as any).end_date ? parseISO((event as any).end_date) : startDate;
+  
+  // Use isWithinInterval for range check (inclusive)
+  return isWithinInterval(date, { start: startDate, end: endDate }) || 
+         isSameDay(date, startDate) || 
+         isSameDay(date, endDate);
+}
+
 const MarketEvents = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -36,11 +49,37 @@ const MarketEvents = () => {
   const { data: events, isLoading } = useMarketEvents();
   const deleteEvent = useDeleteMarketEvent();
 
+  // Fetch event_days for per-day time display
+  const { data: allEventDays } = useQuery({
+    queryKey: ['all-event-days'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('event_days')
+        .select('*')
+        .order('day_date', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   const currentDate = new Date();
   const { data: monthlyStats } = useMonthlyEventProfitability(
     currentDate.getFullYear(),
     currentDate.getMonth() + 1
   );
+
+  // Filter events for selected date (including multi-day events)
+  const eventsForSelectedDate = useMemo(() => {
+    if (!selectedDate || !events) return [];
+    return events.filter(e => isDateInEventRange(selectedDate, e));
+  }, [selectedDate, events]);
+
+  // Get the specific day's times for an event on the selected date
+  const getEventDayTimes = (eventId: string, date: Date) => {
+    if (!allEventDays) return null;
+    const dateStr = format(date, 'yyyy-MM-dd');
+    return allEventDays.find(ed => ed.event_id === eventId && ed.day_date === dateStr);
+  };
 
   const handleEdit = (event: MarketEvent) => {
     setSelectedEvent(event);
@@ -59,8 +98,8 @@ const MarketEvents = () => {
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDate(date);
     if (date) {
-      // Only open drawer if there are no events for this date
-      const hasEvents = events?.some(e => isSameDay(new Date(e.event_date), date));
+      // Only open drawer if there are no events for this date (checking date range)
+      const hasEvents = events?.some(e => isDateInEventRange(date, e));
       if (!hasEvents) {
         setShowDayDrawer(true);
       }
@@ -175,7 +214,7 @@ const MarketEvents = () => {
                           day: 'numeric' 
                         })}
                       </h3>
-                      {events?.filter(e => isSameDay(new Date(e.event_date), selectedDate)).length === 0 ? (
+                      {eventsForSelectedDate.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground">
                           <p>No events scheduled for this day</p>
                           <Button 
@@ -189,10 +228,15 @@ const MarketEvents = () => {
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          {events?.filter(e => isSameDay(new Date(e.event_date), selectedDate)).map(event => {
+                          {eventsForSelectedDate.map(event => {
                             const EventCard = () => {
                               const totalCosts = (event.stall_fee || 0) + (event.travel_cost || 0) + (event.other_costs || 0);
                               const { data: salesData } = useEventSales(event.id);
+                              
+                              // Get per-day times if available
+                              const dayTimes = getEventDayTimes(event.id, selectedDate!);
+                              const displayStartTime = dayTimes?.start_time || event.start_time;
+                              const displayEndTime = dayTimes?.end_time || event.end_time;
                               const profit = (salesData?.totalRevenue || 0) - totalCosts;
                               
                               return (
@@ -208,9 +252,9 @@ const MarketEvents = () => {
                                           </Badge>
                                         </div>
                                         <p className="text-sm text-muted-foreground">{event.location}</p>
-                                        {event.start_time && (
+                                        {displayStartTime && (
                                           <p className="text-xs text-muted-foreground mt-1">
-                                            {event.start_time}{event.end_time && ` - ${event.end_time}`}
+                                            {displayStartTime}{displayEndTime && ` - ${displayEndTime}`}
                                           </p>
                                         )}
                                       </div>
