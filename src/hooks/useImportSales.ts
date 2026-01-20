@@ -9,6 +9,7 @@ interface ImportPayload {
   endDate: string;
   fileName?: string;
   productMappings?: Record<string, string>;
+  eventSelections?: Record<string, string>;
   saveProductMappings?: boolean;
 }
 

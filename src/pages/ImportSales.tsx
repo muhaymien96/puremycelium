@@ -23,13 +23,16 @@ import { StockImpactPreview } from "@/components/StockImpactPreview";
 import { ImportProcessingModal } from "@/components/ImportProcessingModal";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
 type PeriodType = "today" | "week" | "month" | "custom";
 
 interface EventLinkingPreview {
   date: string;
   orderCount: number;
-  matchedEvent: { id: string; name: string; location: string } | null;
+  matchedEvents: Array<{ id: string; name: string; location: string }>;
+  selectedEventId: string | null;
 }
 
 export default function ImportSales() {
@@ -51,6 +54,25 @@ export default function ImportSales() {
   const [showStockPreview, setShowStockPreview] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<"processing" | "success" | "error" | null>(null);
   const [importing, setImporting] = useState(false);
+  const [eventSelections, setEventSelections] = useState<Record<string, string>>({}); // date -> event_id
+
+  const toDateKey = (value: Date | string) => {
+    const date = typeof value === "string" ? new Date(value) : value;
+    return format(date, "yyyy-MM-dd");
+  };
+
+  const transactionDateWindow = useMemo(() => {
+    if (!parseResult) return null;
+    const timestamps = parseResult.groups
+      .map((g) => new Date(g.timestamp))
+      .filter((d) => !isNaN(d.getTime()))
+      .map((d) => d.getTime());
+    if (timestamps.length === 0) return null;
+    return {
+      start: format(new Date(Math.min(...timestamps)), "yyyy-MM-dd"),
+      end: format(new Date(Math.max(...timestamps)), "yyyy-MM-dd"),
+    };
+  }, [parseResult]);
 
   const handlers = useSwipeable({
     onSwipedLeft: () => navigate("/import-history"),
@@ -58,6 +80,31 @@ export default function ImportSales() {
     trackMouse: false,
     preventScrollOnSwipe: true,
   });
+
+  const { data: eventDays } = useQuery({
+    queryKey: ['event-days-import', transactionDateWindow?.start, transactionDateWindow?.end],
+    queryFn: async () => {
+      if (!transactionDateWindow) return [];
+      const { data, error } = await supabase
+        .from('event_days')
+        .select('event_id, day_date')
+        .gte('day_date', transactionDateWindow.start)
+        .lte('day_date', transactionDateWindow.end);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!transactionDateWindow,
+  });
+
+  const eventDayMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    (eventDays || []).forEach((ed: any) => {
+      const list = map.get(ed.day_date) || [];
+      list.push(ed.event_id);
+      map.set(ed.day_date, list);
+    });
+    return map;
+  }, [eventDays]);
 
   const activeProducts = products?.filter((p) => p.is_active) || [];
 
@@ -79,34 +126,48 @@ export default function ImportSales() {
   const eventLinkingPreview = useMemo((): EventLinkingPreview[] => {
     if (!parseResult || !marketEvents) return [];
 
-    // Group transactions by date
     const transactionsByDate = new Map<string, number>();
     parseResult.groups.forEach((group) => {
-      const date = new Date(group.timestamp).toISOString().split('T')[0];
+      const date = toDateKey(group.timestamp as any);
       transactionsByDate.set(date, (transactionsByDate.get(date) || 0) + 1);
     });
 
-    // Build preview with event matching
     const preview: EventLinkingPreview[] = [];
     transactionsByDate.forEach((orderCount, date) => {
-      const matchedEvent = marketEvents.find((e) => e.event_date === date);
+      const dayMatch = eventDayMap.get(date);
+      const eventDayMatches = dayMatch
+        ? marketEvents.filter((e) => dayMatch.includes(e.id))
+        : [];
+
+      const rangeMatches = marketEvents.filter((e) => {
+        const start = e.event_date;
+        const end = (e as any).end_date || e.event_date;
+        return date >= start && date <= end;
+      });
+
+      const allMatches = [...new Map(
+        [...eventDayMatches, ...rangeMatches].map((e) => [e.id, e])
+      ).values()];
+
+      const selectedEventId = eventSelections[date] || (allMatches.length > 0 ? allMatches[0].id : null);
+
       preview.push({
         date,
         orderCount,
-        matchedEvent: matchedEvent ? {
-          id: matchedEvent.id,
-          name: matchedEvent.name,
-          location: matchedEvent.location,
-        } : null,
+        matchedEvents: allMatches.map((e) => ({
+          id: e.id,
+          name: e.name,
+          location: e.location,
+        })),
+        selectedEventId,
       });
     });
 
-    // Sort by date
     return preview.sort((a, b) => a.date.localeCompare(b.date));
-  }, [parseResult, marketEvents]);
+  }, [parseResult, marketEvents, eventDayMap, eventSelections]);
 
-  const linkedOrderCount = eventLinkingPreview.filter((p) => p.matchedEvent).reduce((sum, p) => sum + p.orderCount, 0);
-  const unlinkedOrderCount = eventLinkingPreview.filter((p) => !p.matchedEvent).reduce((sum, p) => sum + p.orderCount, 0);
+  const linkedOrderCount = eventLinkingPreview.filter((p) => p.selectedEventId).reduce((sum, p) => sum + p.orderCount, 0);
+  const unlinkedOrderCount = eventLinkingPreview.filter((p) => !p.selectedEventId).reduce((sum, p) => sum + p.orderCount, 0);
 
   const handlePeriodChange = (period: PeriodType) => {
     setPeriodType(period);
@@ -167,6 +228,7 @@ export default function ImportSales() {
         startDate: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
         endDate: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
         productMappings,
+        eventSelections,
         fileName: file.name,
         saveProductMappings: saveMappings,
       });
@@ -321,24 +383,49 @@ export default function ImportSales() {
                 </Alert>
               )}
 
-              <div className="space-y-2 max-h-48 overflow-y-auto">
+              <div className="space-y-3 max-h-96 overflow-y-auto">
                 {eventLinkingPreview.map((preview) => (
                   <div
                     key={preview.date}
-                    className={`flex items-center justify-between p-3 rounded-lg border ${
-                      preview.matchedEvent ? 'bg-green-50 border-green-200' : 'bg-muted/50'
+                    className={`rounded-lg border p-4 ${
+                      preview.selectedEventId ? 'bg-green-50 border-green-200' : 'bg-muted/50'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium">
-                        {format(parseISO(preview.date), "MMM d, yyyy")}
-                      </span>
-                      <Badge variant="secondary">{preview.orderCount} order(s)</Badge>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium">
+                          {format(parseISO(preview.date), "MMM d, yyyy")}
+                        </span>
+                        <Badge variant="secondary">{preview.orderCount} order(s)</Badge>
+                      </div>
                     </div>
-                    {preview.matchedEvent ? (
-                      <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                        → {preview.matchedEvent.name}
-                      </Badge>
+                    
+                    {preview.matchedEvents.length > 0 ? (
+                      <div className="space-y-2">
+                        {preview.matchedEvents.length > 1 ? (
+                          <p className="text-xs text-muted-foreground mb-2">
+                            {preview.matchedEvents.length} events on this date — select one:
+                          </p>
+                        ) : null}
+                        <div className="flex flex-wrap gap-2">
+                          {preview.matchedEvents.map((event) => (
+                            <button
+                              key={event.id}
+                              onClick={() => setEventSelections((prev) => ({
+                                ...prev,
+                                [preview.date]: event.id,
+                              }))}
+                              className={`px-3 py-2 rounded-md text-sm transition-colors ${
+                                preview.selectedEventId === event.id
+                                  ? 'bg-green-600 text-white'
+                                  : 'bg-white border border-green-200 text-green-700 hover:bg-green-50'
+                              }`}
+                            >
+                              {event.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ) : (
                       <Badge variant="outline">No event match</Badge>
                     )}

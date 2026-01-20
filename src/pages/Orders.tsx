@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,8 @@ import { OrderDetailModal } from '@/components/OrderDetailModal';
 import { EmptyState } from '@/components/EmptyState';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
 import { DateRange } from 'react-day-picker';
+import { downloadCSV } from '@/lib/common';
+import { toast } from 'sonner';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -41,6 +44,63 @@ export default function Orders() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const { data: orders, isLoading } = useOrders();
+
+  const setSingleDay = (date: Date) => {
+    setDateRange({ from: date, to: date });
+  };
+
+  const isWithinDateRange = (orderDate: Date) => {
+    if (!dateRange?.from) return true;
+
+    const normalizedOrderDate = new Date(orderDate);
+    normalizedOrderDate.setHours(0, 0, 0, 0);
+
+    const fromDate = new Date(dateRange.from);
+    fromDate.setHours(0, 0, 0, 0);
+
+    if (dateRange.to) {
+      const toDate = new Date(dateRange.to);
+      toDate.setHours(23, 59, 59, 999);
+      return normalizedOrderDate >= fromDate && normalizedOrderDate <= toDate;
+    }
+
+    const endOfDay = new Date(dateRange.from);
+    endOfDay.setHours(23, 59, 59, 999);
+    return normalizedOrderDate >= fromDate && normalizedOrderDate <= endOfDay;
+  };
+
+  const handleExport = () => {
+    if (!dateRange?.from) {
+      toast.warning('Select a day to export orders for.');
+      return;
+    }
+
+    const fromKey = format(dateRange.from, 'yyyy-MM-dd');
+    const toKey = dateRange.to ? format(dateRange.to, 'yyyy-MM-dd') : fromKey;
+
+    if (filteredAndSortedOrders.length === 0) {
+      toast.info('No orders found for the selected date.');
+      return;
+    }
+
+    const rows = filteredAndSortedOrders.map((order: any) => ({
+      order_number: order.order_number,
+      date: format(new Date(order.created_at), 'yyyy-MM-dd'),
+      customer: order.customers
+        ? `${order.customers.first_name} ${order.customers.last_name}`
+        : 'Walk-in',
+      total_amount: Number(order.total_amount).toFixed(2),
+      status: order.status,
+      source: order.external_source === 'yoco_import' ? 'Yoco' : 'Manual',
+    }));
+
+    const filename = fromKey === toKey
+      ? `orders_${fromKey}`
+      : `orders_${fromKey}_to_${toKey}`;
+
+    downloadCSV(rows, filename);
+    toast.success(`Exported ${rows.length} order${rows.length === 1 ? '' : 's'}`);
+  };
 
   // Reset page when filters update
   useEffect(() => {
@@ -65,26 +125,7 @@ export default function Orders() {
         (sourceFilter === 'yoco_import' && order.external_source === 'yoco_import') ||
         (sourceFilter === 'manual' && !order.external_source);
 
-      // Date range filter
-      let matchesDateRange = true;
-      if (dateRange?.from) {
-        const orderDate = new Date(order.created_at);
-        orderDate.setHours(0, 0, 0, 0); // Reset time to start of day
-        
-        const fromDate = new Date(dateRange.from);
-        fromDate.setHours(0, 0, 0, 0);
-        
-        if (dateRange.to) {
-          const toDate = new Date(dateRange.to);
-          toDate.setHours(23, 59, 59, 999); // End of day
-          matchesDateRange = orderDate >= fromDate && orderDate <= toDate;
-        } else {
-          // Single day selection
-          const endOfDay = new Date(dateRange.from);
-          endOfDay.setHours(23, 59, 59, 999);
-          matchesDateRange = orderDate >= fromDate && orderDate <= endOfDay;
-        }
-      }
+      const matchesDateRange = isWithinDateRange(new Date(order.created_at));
 
       return matchesSearch && matchesStatus && matchesSource && matchesDateRange;
     });
@@ -109,6 +150,14 @@ export default function Orders() {
 
     return result;
   }, [orders, searchQuery, statusFilter, sourceFilter, sortBy, dateRange]);
+
+  const rangeTotal = useMemo(() => {
+    if (!dateRange?.from) return null;
+    const sum = (orders || [])
+      .filter((order: any) => isWithinDateRange(new Date(order.created_at)))
+      .reduce((acc: number, order: any) => acc + Number(order.total_amount || 0), 0);
+    return sum;
+  }, [orders, dateRange]);
 
   const totalPages = Math.ceil(filteredAndSortedOrders.length / ITEMS_PER_PAGE);
   const pagedOrders = filteredAndSortedOrders.slice(
@@ -237,7 +286,7 @@ export default function Orders() {
                   </SelectContent>
                 </Select>
                 
-                <div className="flex gap-2 w-full sm:w-auto">
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto items-center">
                   <DateRangePicker 
                     value={dateRange} 
                     onChange={setDateRange}
@@ -254,8 +303,47 @@ export default function Orders() {
                       <X className="h-4 w-4" />
                     </Button>
                   )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSingleDay(new Date())}
+                  >
+                    Today
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const d = new Date();
+                      d.setDate(d.getDate() - 1);
+                      setSingleDay(d);
+                    }}
+                  >
+                    Yesterday
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleExport}
+                    disabled={!dateRange?.from || filteredAndSortedOrders.length === 0}
+                  >
+                    Export CSV
+                  </Button>
                 </div>
               </div>
+
+              {dateRange?.from && (
+                <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Total sales for selection:</span>
+                  <span className="text-lg font-semibold text-foreground">
+                    R {Number(rangeTotal ?? 0).toFixed(2)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {dateRange.to
+                      ? `${format(dateRange.from, 'yyyy-MM-dd')} to ${format(dateRange.to, 'yyyy-MM-dd')}`
+                      : format(dateRange.from, 'yyyy-MM-dd')}
+                  </span>
+                </div>
+              )}
             </div>
 
             {isLoading ? (

@@ -1,3 +1,4 @@
+/// <reference lib="deno.window" />
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -25,10 +26,33 @@ interface ImportPayload {
   endDate: string;
   fileName?: string;
   productMappings?: Record<string, string>; // external_sku -> product_id
+  eventSelections?: Record<string, string>; // date (YYYY-MM-DD) -> event_id
   saveProductMappings?: boolean;
 }
 
-serve(async (req) => {
+const toDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Builds a deterministic key per transaction to prevent duplicate imports. Includes timestamp (rounded to seconds),
+// total amount, and a sorted signature of all items (sku, quantity, prices) so identical carts are treated as duplicates.
+const buildExternalKey = (group: TransactionGroup, timestamp: Date) => {
+  const roundedTimestamp = new Date(Math.floor(timestamp.getTime() / 1000) * 1000);
+  const itemsSignature = [...group.items]
+    .map((item) => `${item.productSku}|${item.quantity}|${item.unitPrice.toFixed(2)}|${item.lineTotal.toFixed(2)}`)
+    .sort()
+    .join('||');
+
+  const externalKey = `yoco_import|${roundedTimestamp.toISOString()}|${group.totalAmount.toFixed(2)}|${itemsSignature}`;
+  const legacyKey = `yoco_import|${roundedTimestamp.toISOString()}|${group.totalAmount.toFixed(2)}|${group.firstSku}`;
+
+  return { externalKey, legacyKey, roundedTimestamp };
+};
+
+serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -61,17 +85,35 @@ serve(async (req) => {
     }
 
     const payload: ImportPayload = await req.json();
-    const { groups, fileName, productMappings = {}, saveProductMappings = false } = payload;
+    const { groups, fileName, startDate, endDate, productMappings = {}, eventSelections = {}, saveProductMappings = false } = payload;
+
+    if (!groups || groups.length === 0) {
+      return new Response(
+        JSON.stringify({ error: 'No transaction groups provided' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Derive date window from transactions when UI start/end are empty strings
+    const txTimestamps = groups.map((g) => new Date(g.timestamp).getTime()).filter((t) => !Number.isNaN(t));
+    const minTs = Math.min(...txTimestamps);
+    const maxTs = Math.max(...txTimestamps);
+    const derivedStartDate = startDate && startDate.trim() !== '' ? startDate : toDateKey(new Date(minTs));
+    const derivedEndDate = endDate && endDate.trim() !== '' ? endDate : toDateKey(new Date(maxTs));
+    const batchStartDate = derivedStartDate;
+    const batchEndDate = derivedEndDate;
 
     console.log(`Starting import: ${groups.length} groups, fileName: ${fileName}`);
+    console.log(`Event selections provided:`, eventSelections);
+    console.log(`Product mappings provided:`, Object.keys(productMappings).length);
 
     // Create import batch record
     const { data: importBatch, error: batchError } = await supabase
       .from('import_batches')
       .insert({
         file_name: fileName,
-        start_date: payload.startDate,
-        end_date: payload.endDate,
+        start_date: batchStartDate,
+        end_date: batchEndDate,
         status: 'processing',
         created_by: user.id,
       })
@@ -89,12 +131,37 @@ serve(async (req) => {
     const { data: eventsInRange } = await supabase
       .from('market_events')
       .select('id, event_date, end_date, name')
-      .lte('event_date', payload.endDate)
-      .or(`end_date.gte.${payload.startDate},end_date.is.null`);
+      .lte('event_date', derivedEndDate)
+      .or(`end_date.gte.${derivedStartDate},end_date.is.null`);
+
+    const { data: eventDays } = await supabase
+      .from('event_days')
+      .select('event_id, day_date')
+      .gte('day_date', derivedStartDate)
+      .lte('day_date', derivedEndDate);
+
+    const eventDayMap = new Map<string, string[]>();
+    (eventDays || []).forEach((ed: any) => {
+      const existing = eventDayMap.get(ed.day_date) || [];
+      existing.push(ed.event_id);
+      eventDayMap.set(ed.day_date, existing);
+    });
 
     // Build date-matching functions for multi-day events
     // Event matches if transaction date falls within [event_date, end_date] range
     const findEventForDate = (txDate: string): string | null => {
+      // First check user-selected event for this date
+      if (eventSelections[txDate]) {
+        console.log(`Using user selection for ${txDate}: ${eventSelections[txDate]}`);
+        return eventSelections[txDate];
+      }
+
+      const dayMatchedEvents = eventDayMap.get(txDate);
+      if (dayMatchedEvents && dayMatchedEvents.length > 0) {
+        console.log(`Using event_days match for ${txDate}: ${dayMatchedEvents[0]}`);
+        return dayMatchedEvents[0];
+      }
+
       if (!eventsInRange) return null;
       
       for (const event of eventsInRange) {
@@ -103,9 +170,11 @@ serve(async (req) => {
         
         // Check if txDate falls within the event range
         if (txDate >= eventStart && txDate <= eventEnd) {
+          console.log(`Using range match for ${txDate}: ${event.id}`);
           return event.id;
         }
       }
+      console.log(`No event match for ${txDate}`);
       return null;
     };
 
@@ -118,7 +187,7 @@ serve(async (req) => {
       .eq('source', 'yoco_import');
 
     const dbMappings: Record<string, string> = {};
-    (savedMappings || []).forEach(m => {
+    (savedMappings || []).forEach((m: any) => {
       if (m.product_id) {
         dbMappings[m.external_sku] = m.product_id;
       }
@@ -136,12 +205,12 @@ serve(async (req) => {
       .eq('is_active', true);
 
     const productMap = new Map(
-      (allProducts || []).map(p => [p.sku, p])
+      (allProducts || []).map((p: any) => [p.sku, p])
     );
     
     // Also create a map by ID for quick lookup
     const productById = new Map(
-      (allProducts || []).map(p => [p.id, p])
+      (allProducts || []).map((p: any) => [p.id, p])
     );
 
     let newOrders = 0;
@@ -154,35 +223,48 @@ serve(async (req) => {
 
     for (const group of groups as TransactionGroup[]) {
       try {
-        // Generate external transaction key
         const timestamp = new Date(group.timestamp);
-        const roundedTimestamp = new Date(Math.floor(timestamp.getTime() / 1000) * 1000);
-        const externalKey = `yoco_import|${roundedTimestamp.toISOString()}|${group.totalAmount.toFixed(2)}|${group.firstSku}`;
+        const { externalKey, legacyKey, roundedTimestamp } = buildExternalKey(group, timestamp);
 
-        // Check if already exists
+        // Primary duplicate check: external_transaction_key (new deterministic key + legacy key)
         const { data: existing } = await supabase
           .from('orders')
           .select('id')
-          .eq('external_transaction_key', externalKey)
+          .in('external_transaction_key', [externalKey, legacyKey])
+          .limit(1)
           .maybeSingle();
 
-        if (existing) {
+        // Fallback duplicate check: match on transaction_datetime and total_amount in case prior runs did not set external_transaction_key
+        let existingByTimestamp = null;
+        if (!existing) {
+          const { data: existingTs } = await supabase
+            .from('orders')
+            .select('id')
+            .eq('transaction_datetime', roundedTimestamp.toISOString())
+            .eq('total_amount', group.totalAmount)
+            .limit(1)
+            .maybeSingle();
+          existingByTimestamp = existingTs;
+        }
+
+        if (existing || existingByTimestamp) {
           skippedDuplicates++;
+          console.log(`Skipped duplicate transaction at ${timestamp.toISOString()} with key ${externalKey}`);
           continue;
         }
 
-        // Auto-link to market event by transaction date (supports multi-day events)
-        const txDate = timestamp.toISOString().split('T')[0]; // YYYY-MM-DD
+        const txDate = toDateKey(timestamp);
         const matchedEventId = findEventForDate(txDate);
-        
+
         if (matchedEventId) {
           autoLinkedEvents++;
+          console.log(`Transaction on ${txDate} linked to event ${matchedEventId}`);
+        } else {
+          console.log(`Transaction on ${txDate} has no matching event`);
         }
 
-        // Generate order number
         const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-        // Create order with import_batch_id and auto-linked market_event_id
         const { data: order, error: orderError } = await supabase
           .from('orders')
           .insert({
@@ -204,14 +286,11 @@ serve(async (req) => {
 
         if (orderError) throw orderError;
 
-        // Create order items
         let totalCost = 0;
         for (const item of group.items) {
-          // Try to find product: first by mapping, then by direct SKU match
           let productId = finalMappings[item.productSku];
-          let product = productId ? productById.get(productId) : null;
-          
-          // If not found by mapping, try direct SKU match
+          let product: any = productId ? productById.get(productId) : null;
+
           if (!product) {
             product = productMap.get(item.productSku);
           }
@@ -219,7 +298,7 @@ serve(async (req) => {
           if (!product) {
             unmatchedSkus.add(item.productSku);
           }
-          
+
           const { error: itemError } = await supabase
             .from('order_items')
             .insert({
@@ -234,12 +313,10 @@ serve(async (req) => {
 
           if (itemError) throw itemError;
 
-          // Calculate cost with fallback chain: product cost → estimated (60% of unit price)
           let costPerUnit = 0;
           let batchId = null;
 
           if (product?.id) {
-            // Find oldest batch with available stock (FIFO)
             const { data: availableBatch } = await supabase
               .from('product_batches')
               .select('id, quantity')
@@ -249,17 +326,15 @@ serve(async (req) => {
               .limit(1)
               .maybeSingle();
 
-            // Cost fallback chain: product.cost_price → item.unitPrice * 0.6
             const productCost = product?.cost_price;
             const estimatedCost = item.unitPrice * 0.6;
             costPerUnit = Number(productCost || estimatedCost || 0);
 
             if (availableBatch && availableBatch.quantity >= item.quantity) {
               batchId = availableBatch.id;
-              // Decrement batch quantity (this will trigger total_stock recalculation)
               const { error: batchDecError } = await supabase.rpc('decrement_batch_quantity', {
                 p_batch_id: availableBatch.id,
-                p_quantity: item.quantity
+                p_quantity: item.quantity,
               });
 
               if (batchDecError) {
@@ -269,7 +344,6 @@ serve(async (req) => {
               console.warn(`No batch with sufficient stock for product ${product.id}, SKU: ${product.sku}`);
             }
 
-            // Create stock movement record
             const { error: stockError } = await supabase
               .from('stock_movements')
               .insert({
@@ -287,7 +361,6 @@ serve(async (req) => {
               console.error('Failed to create stock movement:', stockError);
             }
           } else {
-            // For unmatched products, use estimated cost (60% of unit price)
             costPerUnit = item.unitPrice * 0.6;
           }
 
@@ -335,6 +408,8 @@ serve(async (req) => {
     }
 
     unmatchedProducts = unmatchedSkus.size;
+
+    console.log(`Import complete: ${newOrders} new, ${skippedDuplicates} skipped, ${totalItems} items, ${unmatchedProducts} unmatched, ${autoLinkedEvents} auto-linked to events`);
 
     // Save new product mappings if requested
     if (saveProductMappings && Object.keys(productMappings).length > 0) {
