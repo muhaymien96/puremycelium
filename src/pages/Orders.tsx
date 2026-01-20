@@ -18,12 +18,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Search, Eye, ShoppingCart, ArrowUpDown } from 'lucide-react';
+import { Search, Eye, ShoppingCart, ArrowUpDown, X } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useOrders } from '@/hooks/useOrders';
 import { Skeleton } from '@/components/ui/skeleton';
 import { OrderDetailModal } from '@/components/OrderDetailModal';
 import { EmptyState } from '@/components/EmptyState';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { DateRange } from 'react-day-picker';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -36,16 +38,17 @@ export default function Orders() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [sortBy, setSortBy] = useState<SortOption>('date_desc');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const { data: orders, isLoading } = useOrders();
 
   // Reset page when filters update
   useEffect(() => {
     setPage(0);
-  }, [searchQuery, statusFilter, sourceFilter, sortBy]);
+  }, [searchQuery, statusFilter, sourceFilter, sortBy, dateRange]);
 
   const filteredAndSortedOrders = useMemo(() => {
-    let result = (orders || []).filter((order: any) => {
+    const result = (orders || []).filter((order: any) => {
       const fullName = order.customers
         ? `${order.customers.first_name} ${order.customers.last_name}`
         : 'Walk-in';
@@ -62,7 +65,28 @@ export default function Orders() {
         (sourceFilter === 'yoco_import' && order.external_source === 'yoco_import') ||
         (sourceFilter === 'manual' && !order.external_source);
 
-      return matchesSearch && matchesStatus && matchesSource;
+      // Date range filter
+      let matchesDateRange = true;
+      if (dateRange?.from) {
+        const orderDate = new Date(order.created_at);
+        orderDate.setHours(0, 0, 0, 0); // Reset time to start of day
+        
+        const fromDate = new Date(dateRange.from);
+        fromDate.setHours(0, 0, 0, 0);
+        
+        if (dateRange.to) {
+          const toDate = new Date(dateRange.to);
+          toDate.setHours(23, 59, 59, 999); // End of day
+          matchesDateRange = orderDate >= fromDate && orderDate <= toDate;
+        } else {
+          // Single day selection
+          const endOfDay = new Date(dateRange.from);
+          endOfDay.setHours(23, 59, 59, 999);
+          matchesDateRange = orderDate >= fromDate && orderDate <= endOfDay;
+        }
+      }
+
+      return matchesSearch && matchesStatus && matchesSource && matchesDateRange;
     });
 
     // Sort
@@ -84,7 +108,7 @@ export default function Orders() {
     });
 
     return result;
-  }, [orders, searchQuery, statusFilter, sourceFilter, sortBy]);
+  }, [orders, searchQuery, statusFilter, sourceFilter, sortBy, dateRange]);
 
   const totalPages = Math.ceil(filteredAndSortedOrders.length / ITEMS_PER_PAGE);
   const pagedOrders = filteredAndSortedOrders.slice(
@@ -212,6 +236,25 @@ export default function Orders() {
                     <SelectItem value="status">Status</SelectItem>
                   </SelectContent>
                 </Select>
+                
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <DateRangePicker 
+                    value={dateRange} 
+                    onChange={setDateRange}
+                    className="w-full sm:w-[240px]"
+                  />
+                  {dateRange && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDateRange(undefined)}
+                      className="px-2"
+                      title="Clear date filter"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
